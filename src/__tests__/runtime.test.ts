@@ -180,6 +180,74 @@ describe('TelegramPullRuntime', () => {
     expect(client.disconnects).toBeGreaterThan(0);
   });
 
+  it('never drops a live message that arrives during doFlush\'s await window', async () => {
+    const client = new FakeClient();
+    client.dialogs = [userDialog('42', 'Ada')];
+    // One backfill message gives a deterministic sync point (drain its batch
+    // below) before the live-event flushes under test — same reasoning as
+    // the self-heal test: an event injected right after start() can race
+    // the walker's own empty-chat commitPoint().
+    client.messagesByChat['42'] = [msg(100, 1750_000_000, 'backfilled')];
+    let calls = 0;
+    let enterFlush!: () => void;
+    const entered = new Promise<void>((resolve) => { enterFlush = resolve; });
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => { openGate = resolve; });
+    const { rt } = makeRuntime({
+      client,
+      flushDebounceMs: 5,
+      loadPriorMessages: async (id) => {
+        calls += 1;
+        if (calls === 2) {
+          // First LIVE flush's loadPriorMessages call (call #1 is the
+          // backfill flush's) — park here to simulate a real IPC gap.
+          enterFlush();
+          await gate;
+        }
+        return null;
+      },
+    });
+    await rt.start();
+    expect(await rt.nextBatch()).not.toBeNull(); // drain the backfill batch — sync point
+    const newHandler = client.handlers.find((h) => (h.ev as { tag: string }).tag === 'new')!;
+
+    // Live message A: its debounced flush enters doFlush and parks mid-await.
+    await newHandler.cb({
+      chatId: { toString: () => '42' },
+      message: msg(1, 1750_000_500, 'A'),
+    });
+    await entered;
+
+    // Live message B arrives WHILE the first flush is parked inside the await.
+    await newHandler.cb({
+      chatId: { toString: () => '42' },
+      message: msg(2, 1750_000_600, 'B'),
+    });
+
+    openGate(); // let the parked flush finish
+
+    const batch1 = await rt.nextBatch();
+    const day1 = batch1!.items[0] as DayItem;
+    expect(day1.messages.some((m) => m.id === '1')).toBe(true); // A delivered
+
+    // B must land in a LATER batch with no further live event injected —
+    // pre-fix, B is wiped by buckets.clear() and this never arrives (the
+    // race below times out); post-fix, B sits in a fresh bucket and the
+    // re-armed debounce flushes it on its own.
+    const TIMEOUT = Symbol('timeout');
+    const raced = await Promise.race([
+      rt.nextBatch(),
+      new Promise((resolve) => setTimeout(() => resolve(TIMEOUT), 300)),
+    ]);
+    expect(raced).not.toBe(TIMEOUT);
+    const batch2 = raced as Awaited<ReturnType<typeof rt.nextBatch>>;
+    const day2 = batch2!.items[0] as DayItem;
+    expect(day2.messages.some((m) => m.id === '2')).toBe(true); // B delivered
+    expect(day2.messages.some((m) => m.id === '1')).toBe(false); // no duplicate of A
+
+    await rt.stop();
+  });
+
   it('a rejected doFlush self-heals: later flushes still work and stop() still closes the queue', async () => {
     const client = new FakeClient();
     client.dialogs = [userDialog('42', 'Ada')];

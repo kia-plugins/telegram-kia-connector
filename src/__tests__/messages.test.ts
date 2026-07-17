@@ -70,7 +70,7 @@ describe('normalizeMessage', () => {
       },
       { selfName: 'Me' },
     );
-    expect(withMedia?.media).toEqual({ kind: 'image' });
+    expect(withMedia?.media).toEqual({ kind: 'image', mimeType: 'image/jpeg' });
     expect(
       normalizeMessage({ id: 8, date: 1750000000, message: '' }, { selfName: 'Me' }),
     ).toBeNull();

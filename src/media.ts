@@ -41,7 +41,10 @@ interface MediaLike {
 export function describeMedia(media: unknown): MediaDescriptor | undefined {
   const m = media as MediaLike | undefined;
   if (!m || typeof m !== 'object') return undefined;
-  if (m.className === 'MessageMediaPhoto' && m.photo) return { kind: 'image' };
+  // Telegram re-encodes all photos server-side to JPEG; the platform's
+  // vision routing keys off metadata.mime, so it must be present here.
+  if (m.className === 'MessageMediaPhoto' && m.photo)
+    return { kind: 'image', mimeType: 'image/jpeg' };
   if (m.className !== 'MessageMediaDocument' || !m.document) return undefined;
   const doc = m.document;
   const attrs = Array.isArray(doc.attributes) ? doc.attributes : [];

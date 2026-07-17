@@ -51,9 +51,12 @@ two grants this connector needs:
 
 - **One document per chat per (local) day** — type `telegram.chat_day`,
   externalId `<chatId>:<YYYY-MM-DD>` — with every message rendered as
-  `HH:MM Sender: text`, reply quotes inline (`↳re …`), media as labels
-  (`[image]`, `[voice note 1:05]`, `[document: report.pdf]`), forwards
-  prefixed `fwd from …`, and service notices in italics.
+  `HH:MM Sender: text`, media as labels (`[image]`, `[voice note 1:05]`,
+  `[document: report.pdf]`), forwards prefixed `fwd from …`, and service
+  notices in italics. Reply quotes render inline (`↳re …`) for messages
+  received during the live phase; quotes resolve against an in-memory
+  recent-message index only, so replies rendered during the historical
+  backfill show no quoted snippet.
 - **Which chats:** DMs (including Saved Messages) and groups (basic +
   supergroups). Broadcast channels, bot chats, and Telegram's service
   notifications are skipped.

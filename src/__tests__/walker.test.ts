@@ -20,6 +20,8 @@ const chat = (chatId: string): IncludedChat => ({
 const msg = (id: number, dateSec: number): RawMessageLike => ({
   id, date: dateSec, message: `m${id}`,
 });
+/** A message with NO date field — GramJS can hand these back in rare cases. */
+const dateless = (id: number): RawMessageLike => ({ id, message: `m${id}` });
 
 function makeDeps(over: Partial<WalkerDeps>): {
   deps: WalkerDeps;
@@ -80,6 +82,23 @@ describe('walkChats', () => {
     // stopAt = 800000 - 100000 = 700000; msg7 (700000) is NOT > stopAt → stop there
     expect(emitted.map((e) => e.id)).toEqual([9, 8]);
     expect(deps.cursor.chats.c1.newestTsMs).toBe(900_000);
+  });
+
+  it('does not let a date-less message falsely trigger the catch-up stop', async () => {
+    const { deps, emitted } = makeDeps({
+      client: {
+        iterMessages: fakeIter([msg(3, 900), dateless(2), msg(1, 850)]),
+      },
+      cursor: { chats: { c1: { oldestId: 1, complete: true, newestTsMs: 800_000 } } },
+      catchUpOverlapMs: 100_000,
+    });
+    await walkChats(deps);
+    // stopAt = 800_000 - 100_000 = 700_000. A date-less message's tsMs falls
+    // back to 0, which is <= stopAt — that must NOT be read as "caught up",
+    // or the walk breaks right there and silently skips everything below it
+    // (here, msg 1 at 850_000, well above stopAt). Both dated messages are
+    // emitted and the walk continues straight through the date-less one.
+    expect(emitted.map((e) => e.id)).toEqual([3, 2, 1]);
   });
 
   it('commits every commitEvery messages and at chat end', async () => {

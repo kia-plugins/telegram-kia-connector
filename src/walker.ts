@@ -80,7 +80,10 @@ export async function walkChats(deps: WalkerDeps): Promise<void> {
           const m = raw as RawMessageLike;
           if (typeof m?.id !== 'number') continue;
           const tsMs = (m.date ?? 0) * 1000;
-          if (wasComplete && tsMs <= stopAt) break; // caught up
+          // A date-less message must never masquerade as tsMs=0 and falsely
+          // trigger the catch-up stop — that would skip everything older in
+          // the window. Only a genuinely dated message can end the walk.
+          if (wasComplete && m.date !== undefined && tsMs <= stopAt) break; // caught up
           await deps.emitMessage(chat, m);
           emittedAny = true;
           if (!wasComplete) progress.oldestId = m.id;

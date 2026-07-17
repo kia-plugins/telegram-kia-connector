@@ -312,10 +312,10 @@ export class TelegramPullRuntime {
     this.flushChain = this.flushChain
       .then(() => this.doFlush(phase))
       .catch((err: unknown) => {
-        // A failed doFlush throws before reaching buckets.clear(), so its
-        // buckets stay pending and are retried by the next flush — nothing
-        // is dropped. The chain must never stay rejected: stop()/fatal()
-        // await it to close the queue and disconnect.
+        // A failed doFlush restores its detached buckets (see doFlush) before
+        // rethrowing, so nothing is dropped — the next flush retries them.
+        // The chain must never stay rejected: stop()/fatal() await it to
+        // close the queue and disconnect.
         this.deps.log('error', `telegram: flush failed — ${String(err)}`);
       });
     return this.flushChain;
@@ -324,20 +324,44 @@ export class TelegramPullRuntime {
   private async doFlush(phase: 'backfill' | 'live'): Promise<void> {
     if (this.buckets.size === 0 && this.pendingFiles.length === 0) return;
     const days: TelegramItem[] = [];
-    for (const [chatId, chatBuckets] of this.buckets) {
-      for (const [day, bucket] of chatBuckets) {
-        const incoming = [...bucket.byId.values()];
-        const prior =
-          (await this.deps.loadPriorMessages(`${chatId}:${day}`)) ?? [];
-        days.push({
-          kind: 'day',
-          chat: bucket.chat,
-          day,
-          messages: mergeMessages(prior, incoming),
-        });
-      }
-    }
+    // Detach all buckets BEFORE any await: a live event firing during
+    // loadPriorMessages lands in a fresh bucket, never a snapshotted one.
+    const detached = [...this.buckets.entries()];
     this.buckets.clear();
+    try {
+      for (const [chatId, chatBuckets] of detached) {
+        for (const [day, bucket] of chatBuckets) {
+          const incoming = [...bucket.byId.values()];
+          const prior =
+            (await this.deps.loadPriorMessages(`${chatId}:${day}`)) ?? [];
+          days.push({
+            kind: 'day',
+            chat: bucket.chat,
+            day,
+            messages: mergeMessages(prior, incoming),
+          });
+        }
+      }
+    } catch (err) {
+      // Put the detached data back so the next flush retries it. Concurrent
+      // arrivals are NEWER — never overwrite an id that landed meanwhile.
+      for (const [chatId, chatBuckets] of detached) {
+        const cur =
+          this.buckets.get(chatId) ??
+          this.buckets.set(chatId, new Map()).get(chatId)!;
+        for (const [day, bucket] of chatBuckets) {
+          const curBucket = cur.get(day);
+          if (!curBucket) {
+            cur.set(day, bucket);
+            continue;
+          }
+          for (const [id, m] of bucket.byId) {
+            if (!curBucket.byId.has(id)) curBucket.byId.set(id, m);
+          }
+        }
+      }
+      throw err;
+    }
     const files = this.pendingFiles;
     this.pendingFiles = [];
     this.queue.push({
@@ -345,6 +369,9 @@ export class TelegramPullRuntime {
       items: [...days, ...files],
       cursor: JSON.parse(JSON.stringify(this.cursor)) as TelegramCursor,
     });
+    // Anything that arrived during the awaits sits in fresh buckets —
+    // re-arm the debounced flush so it lands without another event.
+    if (this.buckets.size > 0) this.scheduleLiveFlush();
   }
 
   private fatal(err: Error): void {

@@ -12,9 +12,9 @@ import {
 } from '../media';
 
 describe('describeMedia', () => {
-  it('maps photos to image', () => {
+  it('maps photos to image with a jpeg mime (Telegram server-transcodes all photos)', () => {
     expect(describeMedia({ className: 'MessageMediaPhoto', photo: {} })).toEqual(
-      { kind: 'image' },
+      { kind: 'image', mimeType: 'image/jpeg' },
     );
   });
 
