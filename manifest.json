@@ -1,0 +1,10 @@
+{
+  "id": "kia.telegram",
+  "name": "Telegram",
+  "version": "1.0.0",
+  "engine": "^1.0.0",
+  "entry": "dist/index.js",
+  "caps": ["net", "query"],
+  "contributes": { "sources": ["telegram"] },
+  "icon": "icon.png"
+}
