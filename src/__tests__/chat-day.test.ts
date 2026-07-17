@@ -41,6 +41,17 @@ describe('chat-day', () => {
     expect(merged[1].text).toBe('edited');
   });
 
+  it('numeric id tie-break: same-second bursts with ids across digit boundaries', () => {
+    const sameTs = 1000;
+    const incoming = [
+      msg({ id: '10', tsMs: sameTs }),
+      msg({ id: '9', tsMs: sameTs }),
+    ];
+    const merged = mergeMessages([], incoming);
+    // Numeric comparison: 9 < 10, not lexicographic where '10' < '9'
+    expect(merged.map((m) => m.id)).toEqual(['9', '10']);
+  });
+
   it('renders senders, quotes, media labels and system lines', () => {
     const ts = new Date(2026, 6, 17, 9, 5).getTime();
     const out = renderDay([

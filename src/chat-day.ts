@@ -20,7 +20,7 @@ export function mergeMessages(
   for (const m of existing) byId.set(m.id, m);
   for (const m of incoming) byId.set(m.id, m); // incoming wins on conflict
   return [...byId.values()].sort(
-    (a, b) => a.tsMs - b.tsMs || a.id.localeCompare(b.id),
+    (a, b) => a.tsMs - b.tsMs || Number(a.id) - Number(b.id),
   );
 }
 
