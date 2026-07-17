@@ -119,6 +119,44 @@ describe('walkChats', () => {
     expect(deps.cursor.chats.c1.complete).toBe(true);
   });
 
+  it('does not shrink the catch-up window when a flood interrupts the pass', async () => {
+    // Chat is already complete with newestTsMs=800_000, overlap=100_000, so
+    // the intended stop is 700_000. Pass 1 emits 900/880 then floods; pass 2
+    // must re-walk from the top using the ORIGINAL stopAt (700_000), not one
+    // recomputed from the newestTsMs the flooded pass advanced to (900_000) —
+    // otherwise messages in (700_000, 800_000] are silently skipped forever.
+    let calls = 0;
+    const iter = (_entity: unknown, _params: { offsetId?: number }) => {
+      calls += 1;
+      return (async function* () {
+        if (calls === 1) {
+          yield msg(900, 900);
+          yield msg(880, 880);
+          const err = new Error('FLOOD_WAIT') as Error & { seconds: number };
+          err.seconds = 1;
+          throw err;
+        }
+        for (const dateSec of [900, 880, 850, 820, 790, 760, 730, 710, 690]) {
+          yield msg(dateSec, dateSec);
+        }
+      })();
+    };
+    const { deps, emitted } = makeDeps({
+      client: { iterMessages: iter },
+      cursor: { chats: { c1: { complete: true, newestTsMs: 800_000 } } },
+      catchUpOverlapMs: 100_000,
+    });
+    await walkChats(deps);
+    // Retry re-covers the window down to 710 (>700_000) and stops before 690;
+    // duplicated 900/880 from the flooded first pass are expected — day-merge
+    // dedups them downstream.
+    expect(emitted.map((e) => e.id)).toEqual([
+      900, 880, 900, 880, 850, 820, 790, 760, 730, 710,
+    ]);
+    expect(deps.cursor.chats.c1.newestTsMs).toBe(900_000);
+    expect(deps.cursor.chats.c1.complete).toBe(true);
+  });
+
   it('rethrows non-flood errors', async () => {
     const iter = () =>
       (async function* () {

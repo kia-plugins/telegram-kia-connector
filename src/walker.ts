@@ -60,6 +60,9 @@ export async function walkChats(deps: WalkerDeps): Promise<void> {
 
     // Retry loop: a long FLOOD_WAIT breaks the iterator; re-enter the same
     // chat from the (mutated) cursor until it finishes or aborts.
+    // Watermark advances only on clean finish: a mid-pass commit (flood/abort)
+    // must not shrink a future catch-up window or inflate the stored cursor.
+    let maxTsSeen = 0;
     let done = false;
     while (!done && !deps.signal.aborted) {
       const wasComplete = progress.complete;
@@ -81,7 +84,7 @@ export async function walkChats(deps: WalkerDeps): Promise<void> {
           await deps.emitMessage(chat, m);
           emittedAny = true;
           if (!wasComplete) progress.oldestId = m.id;
-          if (tsMs > progress.newestTsMs) progress.newestTsMs = tsMs;
+          if (tsMs > maxTsSeen) maxTsSeen = tsMs;
           sinceCommit += 1;
           if (sinceCommit >= commitEvery) {
             sinceCommit = 0;
@@ -89,6 +92,7 @@ export async function walkChats(deps: WalkerDeps): Promise<void> {
           }
         }
         if (!wasComplete) progress.complete = true;
+        if (maxTsSeen > progress.newestTsMs) progress.newestTsMs = maxTsSeen;
         if (emittedAny || !wasComplete) await deps.commitPoint();
         done = true; // clean finish — a thrown flood lands in catch instead
       } catch (err) {
