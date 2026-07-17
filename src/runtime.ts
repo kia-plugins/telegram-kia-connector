@@ -145,9 +145,10 @@ export class TelegramPullRuntime {
       signal: this.ctrl.signal,
       emitMessage: (chat, m) => this.ingest(chat, m, 'backfill'),
       commitPoint: () => this.flush('backfill'),
-      // WalkerDeps allows a 'debug' level the vendored LogLevel doesn't; the
-      // walker never actually emits it (only 'warn' today) — pass through.
-      log: (l, m) => this.deps.log(l as LogLevel, m),
+      // WalkerDeps allows a 'debug' level the vendored LogLevel doesn't;
+      // map it to 'info' so a future walker 'debug' call can't leak an
+      // out-of-union value to the host.
+      log: (l, m) => this.deps.log(l === 'debug' ? 'info' : l, m),
       commitEvery: this.deps.commitEvery,
       catchUpOverlapMs: this.deps.catchUpOverlapMs,
       sleep: this.deps.sleep,
@@ -248,7 +249,9 @@ export class TelegramPullRuntime {
     const peer = peerOfEntity(chat.entity);
     let bytes: Buffer | string | undefined;
     try {
-      // ONE download at a time by construction — ingest is awaited serially.
+      // Backfill downloads are serialized by the walker's await; a live
+      // event's download may briefly overlap one backfill download —
+      // bounded, acceptable.
       bytes = await this.deps.client.downloadMedia(raw, {});
     } catch (err) {
       this.deps.log('warn', `telegram: media download failed for ${fileExternalId} — ${String(err)}`);
@@ -306,7 +309,15 @@ export class TelegramPullRuntime {
   /** Serialized: merges every pending bucket against the stored ledger and
    *  pushes ONE batch (day items, then files) with a cursor snapshot. */
   private flush(phase: 'backfill' | 'live'): Promise<void> {
-    this.flushChain = this.flushChain.then(() => this.doFlush(phase));
+    this.flushChain = this.flushChain
+      .then(() => this.doFlush(phase))
+      .catch((err: unknown) => {
+        // A failed doFlush throws before reaching buckets.clear(), so its
+        // buckets stay pending and are retried by the next flush — nothing
+        // is dropped. The chain must never stay rejected: stop()/fatal()
+        // await it to close the queue and disconnect.
+        this.deps.log('error', `telegram: flush failed — ${String(err)}`);
+      });
     return this.flushChain;
   }
 

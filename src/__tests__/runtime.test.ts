@@ -1,4 +1,3 @@
-import { DOC_TYPE } from '../chat-day';
 import type { RawMessageLike } from '../messages';
 import { isAuthLossError, TelegramPullRuntime, type RuntimeDeps } from '../runtime';
 import type { DayItem, FileItem, NormalizedMessage } from '../types';
@@ -179,6 +178,62 @@ describe('TelegramPullRuntime', () => {
     await rt.stop();
     for (;;) { const b = await rt.nextBatch(); if (b === null) break; }
     expect(client.disconnects).toBeGreaterThan(0);
+  });
+
+  it('a rejected doFlush self-heals: later flushes still work and stop() still closes the queue', async () => {
+    const client = new FakeClient();
+    client.dialogs = [userDialog('42', 'Ada')];
+    // One backfill message gives us a deterministic sync point (drain its
+    // batch below) before the live-event flushes we're actually testing —
+    // otherwise a live event injected right after start() can race the
+    // walker's own empty-chat commitPoint() and land in the wrong flush.
+    client.messagesByChat['42'] = [msg(100, 1750_000_000, 'backfilled')];
+    const logs: Array<{ level: string; msg: string }> = [];
+    let calls = 0;
+    const { rt } = makeRuntime({
+      client,
+      flushDebounceMs: 5,
+      loadPriorMessages: async (id) => {
+        calls += 1;
+        if (calls === 2) throw new Error('boom'); // first LIVE flush (call #1 is backfill's)
+        return null;
+      },
+      log: (level, msg) => { logs.push({ level, msg }); },
+    });
+    await rt.start();
+    expect(await rt.nextBatch()).not.toBeNull(); // drain the backfill batch — sync point
+    const newHandler = client.handlers.find((h) => (h.ev as { tag: string }).tag === 'new')!;
+
+    // First live message: its debounced flush calls loadPriorMessages (call
+    // #2), which rejects. Give the debounce + rejection handling time to run.
+    await newHandler.cb({
+      chatId: { toString: () => '42' },
+      message: msg(1, 1750_000_500, 'first'),
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(logs.some((l) => l.level === 'error' && l.msg.includes('flush failed'))).toBe(true);
+
+    // Second, LATER message: if the chain were wedged by the first
+    // rejection, this flush would never resolve and nextBatch() would hang.
+    await newHandler.cb({
+      chatId: { toString: () => '42' },
+      message: msg(2, 1750_000_600, 'second'),
+    });
+    const batch = await rt.nextBatch();
+    expect(batch).not.toBeNull();
+    const day = batch!.items[0] as DayItem;
+    expect(day.messages.some((m) => m.id === '2')).toBe(true);
+
+    // stop() must resolve (queue close + disconnect must run) rather than
+    // hang forever awaiting a permanently-rejected chain. Race it against a
+    // short timer so a wedged chain fails by assertion, not Jest timeout.
+    const TIMEOUT = Symbol('timeout');
+    const winner = await Promise.race([
+      rt.stop().then(() => 'stop' as const),
+      new Promise((resolve) => setTimeout(() => resolve(TIMEOUT), 500)),
+    ]);
+    expect(winner).toBe('stop');
+    expect(await rt.nextBatch()).toBeNull();
   });
 });
 
