@@ -1,0 +1,24 @@
+{
+  "name": "telegram-kia-connector",
+  "version": "1.0.0",
+  "description": "Telegram connector for KIAgent (extension platform, GramJS-based).",
+  "license": "MIT",
+  "private": false,
+  "files": ["manifest.json", "dist", "README.md", "icon.png"],
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "telegram": "2.26.22"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.0",
+    "esbuild": "0.23.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.4.0"
+  }
+}
