@@ -8,7 +8,7 @@ describe('makeTelegramClient', () => {
       'iterDialogs', 'iterMessages', 'downloadMedia', 'getMessages',
       'addEventHandler',
     ] as const) {
-      expect(typeof (c as Record<string, unknown>)[fn]).toBe('function');
+      expect(typeof (c as unknown as Record<string, unknown>)[fn]).toBe('function');
     }
     expect(typeof c.session.save).toBe('function');
     expect(FLOOD_SLEEP_THRESHOLD_S).toBe(300);

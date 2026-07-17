@@ -49,7 +49,6 @@ export interface TgClient {
     event: unknown,
   ): void;
   session: { save(): string };
-  [key: string]: unknown;
 }
 
 export function makeTelegramClient(auth: AuthBlob): TgClient {
