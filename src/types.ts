@@ -79,3 +79,14 @@ export interface FileItem {
 }
 
 export type TelegramItem = DayItem | FileItem;
+
+/** A dialog that passed filtering, with what the walker needs to fetch it. */
+export interface IncludedChat {
+  chatId: string;
+  name: string;
+  type: 'dm' | 'group';
+  /** GramJS entity (User/Chat/Channel) — passed to iterMessages verbatim. */
+  entity: unknown;
+  /** Epoch ms of the dialog's last message (recent-first ordering). */
+  lastMessageTsMs: number;
+}
