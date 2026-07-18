@@ -1,6 +1,6 @@
 {
   "name": "telegram-kia-connector",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Telegram connector for KIAgent (extension platform, teleproto-based).",
   "license": "MIT",
   "private": false,

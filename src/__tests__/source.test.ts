@@ -136,6 +136,25 @@ describe('descriptor', () => {
 });
 
 describe('connect', () => {
+  it('emits the QR after the scan hint (host UI wipes the QR on status)', async () => {
+    const { host } = makeHost();
+    const client = new FakePairClient();
+    const src = createTelegramSource(host, { makeClient: () => client, events: EV });
+    const events: Array<{ kind: 'qr' | 'status'; text: string }> = [];
+    const channel = {
+      oauth: jest.fn(),
+      showQr: (qr: string) => { events.push({ kind: 'qr', text: qr }); },
+      prompt: jest.fn(async () => ({ apiId: 123, apiHash: 'h' })),
+      status: (msg: string) => { events.push({ kind: 'status', text: msg }); },
+    } as unknown as AuthChannel;
+    await src.connect(channel);
+    const qrAt = events.findIndex((e) => e.kind === 'qr');
+    const hintAt = events.findIndex(
+      (e) => e.kind === 'status' && /Scan with Telegram/.test(e.text),
+    );
+    expect(qrAt).toBeGreaterThan(hintAt);
+  });
+
   it('prompts for api creds, shows the QR deep link, saves the blob', async () => {
     const { host, dataDir } = makeHost();
     const client = new FakePairClient();

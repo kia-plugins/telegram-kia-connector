@@ -144,10 +144,12 @@ export function createTelegramSource(
               { apiId, apiHash },
               {
                 qrCode: async ({ token }) => {
-                  auth.showQr(`tg://login?token=${token.toString('base64url')}`);
+                  // Status FIRST: the host UI clears any visible QR when a
+                  // status arrives, so the QR must be the last event pushed.
                   auth.status(
                     'Scan with Telegram on your phone: Settings → Devices → Link Desktop Device',
                   );
+                  auth.showQr(`tg://login?token=${token.toString('base64url')}`);
                 },
                 // teleproto drives the 2FA (SESSION_PASSWORD_NEEDED) flow through
                 // this callback itself; onError only sees other failures.
