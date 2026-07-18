@@ -20,7 +20,7 @@ const chat = (chatId: string): IncludedChat => ({
 const msg = (id: number, dateSec: number): RawMessageLike => ({
   id, date: dateSec, message: `m${id}`,
 });
-/** A message with NO date field — GramJS can hand these back in rare cases. */
+/** A message with NO date field — teleproto can hand these back in rare cases. */
 const dateless = (id: number): RawMessageLike => ({ id, message: `m${id}` });
 
 function makeDeps(over: Partial<WalkerDeps>): {

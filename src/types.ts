@@ -30,7 +30,7 @@ export interface MediaDescriptor {
 
 /** Resolved chat identity at flush time. */
 export interface ChatInfo {
-  /** Marked Telegram chat id (GramJS Dialog.id) as a string. */
+  /** Marked Telegram chat id (teleproto Dialog.id) as a string. */
   chatId: string;
   name: string;
   type: 'dm' | 'group';
@@ -85,7 +85,7 @@ export interface IncludedChat {
   chatId: string;
   name: string;
   type: 'dm' | 'group';
-  /** GramJS entity (User/Chat/Channel) — passed to iterMessages verbatim. */
+  /** teleproto entity (User/Chat/Channel) — passed to iterMessages verbatim. */
   entity: unknown;
   /** Epoch ms of the dialog's last message (recent-first ordering). */
   lastMessageTsMs: number;

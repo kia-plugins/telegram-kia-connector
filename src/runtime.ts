@@ -1,5 +1,5 @@
 /**
- * The per-account pull engine: owns ONE GramJS client, buckets normalized
+ * The per-account pull engine: owns ONE teleproto client, buckets normalized
  * messages by (chat, local day) from BOTH ingest paths (history walker +
  * live events), merges each flush against the prior stored ledger, and
  * pushes batches into the queue the pull() generator drains. Mirrors the
@@ -50,7 +50,7 @@ export function isAuthLossError(err: unknown): boolean {
 export interface RuntimeDeps {
   client: TgClient;
   initialCursor: TelegramCursor | null;
-  /** GramJS event builders (NewMessage / EditedMessage instances) — injected
+  /** teleproto event builders (NewMessage / EditedMessage instances) — injected
    *  so tests pass sentinels and invoke the captured handlers directly. */
   events: { newMessage: unknown; editedMessage: unknown };
   loadPriorMessages(externalId: string): Promise<NormalizedMessage[] | null>;

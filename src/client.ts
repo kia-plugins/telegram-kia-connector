@@ -1,14 +1,14 @@
 /**
- * The ONLY file that imports GramJS client machinery. Everything else talks
+ * The ONLY file that imports teleproto client machinery. Everything else talks
  * to TgClient — a narrow duck of the handful of methods this connector uses —
- * so tests run on plain fakes and a GramJS upgrade has one blast radius.
+ * so tests run on plain fakes and a teleproto upgrade has one blast radius.
  */
-import { TelegramClient } from 'telegram';
-import { StringSession } from 'telegram/sessions';
+import { TelegramClient } from 'teleproto';
+import { StringSession } from 'teleproto/sessions';
 
 import type { AuthBlob } from './auth';
 
-/** FLOOD_WAITs up to this many seconds are slept through by GramJS itself. */
+/** FLOOD_WAITs up to this many seconds are slept through by teleproto itself. */
 export const FLOOD_SLEEP_THRESHOLD_S = 300;
 
 export interface QrToken {

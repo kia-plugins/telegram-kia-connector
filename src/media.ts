@@ -1,11 +1,11 @@
 /**
- * Media plumbing: duck-typed descriptor extraction from GramJS message media,
+ * Media plumbing: duck-typed descriptor extraction from teleproto message media,
  * declared-size pre-checks, synthetic filenames, and the tg_msg re-fetch ref.
  * The ref stores peer type + access hash because a fresh StringSession client
  * has NO entity cache — fetchBytes must rebuild the InputPeer from metadata
  * alone, never from getEntity().
  */
-import { Api } from 'telegram';
+import { Api } from 'teleproto';
 import bigInt from 'big-integer';
 
 import type { MediaDescriptor, MediaKind } from './types';
@@ -36,7 +36,7 @@ interface MediaLike {
   };
 }
 
-/** GramJS Api.TypeMessageMedia → our descriptor; undefined = not indexable
+/** teleproto Api.TypeMessageMedia → our descriptor; undefined = not indexable
  *  media (webpage previews, polls, geo — their text lives in the message). */
 export function describeMedia(media: unknown): MediaDescriptor | undefined {
   const m = media as MediaLike | undefined;

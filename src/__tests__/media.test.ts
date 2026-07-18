@@ -133,7 +133,7 @@ describe('refs', () => {
     expect(parseRef(42)).toBeNull();
   });
 
-  it('builds real GramJS input peers', () => {
+  it('builds real teleproto input peers', () => {
     expect(
       (inputPeerFor({ chatId: '42', msgId: 1, peer: 'user', accessHash: '7' }) as { className: string })
         .className,

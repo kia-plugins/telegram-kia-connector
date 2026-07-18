@@ -1,5 +1,5 @@
 /**
- * The persisted pairing blob: user-provided api credentials + the GramJS
+ * The persisted pairing blob: user-provided api credentials + the teleproto
  * StringSession. Stored PLAINTEXT under the extension's dataDir (same
  * trade-off as the WhatsApp connector — documented in the README): anyone
  * with the file can read the account until the session is revoked from
