@@ -7,7 +7,7 @@ await build({
   format: 'cjs',
   target: 'node20',
   outfile: 'dist/index.js',
-  // Optional native ws accelerators GramJS's websocket dep probes for.
+  // Optional native ws accelerators teleproto's websocket dep probes for.
   external: ['bufferutil', 'utf-8-validate'],
   logLevel: 'info',
 });

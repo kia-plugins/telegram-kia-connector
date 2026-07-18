@@ -5,7 +5,7 @@
  * in place); commitPoint() marks the moments that state is safe to persist —
  * the runtime flushes buckets and yields a batch carrying the cursor there.
  *
- * FLOOD_WAIT above GramJS's auto-sleep threshold arrives here as a thrown
+ * FLOOD_WAIT above teleproto's auto-sleep threshold arrives here as a thrown
  * error with `.seconds`. That is EXPECTED under a full-history walk: sleep it
  * out and re-enter the same chat — the mutated cursor makes re-entry cheap.
  */

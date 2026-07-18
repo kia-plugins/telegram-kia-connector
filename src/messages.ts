@@ -1,6 +1,6 @@
 /**
  * Api.Message → NormalizedMessage. Pure and duck-typed: the runtime hands in
- * plain shapes (production: GramJS custom Message objects, whose getters
+ * plain shapes (production: teleproto custom Message objects, whose getters
  * satisfy the same ducks; tests: fixtures). Quote resolution goes through the
  * caller's lookup — no per-message API calls, ever.
  */

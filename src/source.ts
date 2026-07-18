@@ -1,7 +1,7 @@
 /**
  * The Telegram source: QR pairing in connect() (auth blob persisted under the
  * extension's dataDir — see the README privacy note on plaintext storage),
- * and a pull() that owns one long-lived GramJS client per account and never
+ * and a pull() that owns one long-lived teleproto client per account and never
  * returns while healthy: the resumable history walker streams 'backfill'
  * batches, live events stream 'live' batches, media bytes land as parented
  * `file` items. The engine drains the iterable with no per-batch timeout —
@@ -9,8 +9,7 @@
  */
 import path from 'node:path';
 
-import { NewMessage } from 'telegram/events';
-import { EditedMessage } from 'telegram/events/EditedMessage';
+import { EditedMessage, NewMessage } from 'teleproto/events';
 
 import { loadAuthBlob, saveAuthBlob, type AuthBlob } from './auth';
 import { DOC_TYPE, dayTitle, renderDay } from './chat-day';
@@ -47,7 +46,7 @@ const NOT_PAIRED = 'telegram: not paired — reconnect the account';
 /** Test seams — production callers omit all of these. */
 export interface TelegramSourceSeams {
   makeClient?: (auth: AuthBlob) => TgClient;
-  /** Event builder instances (GramJS NewMessage/EditedMessage by default). */
+  /** Event builder instances (teleproto NewMessage/EditedMessage by default). */
   events?: { newMessage: unknown; editedMessage: unknown };
   pairingTimeoutMs?: number;
   flushDebounceMs?: number;
@@ -136,7 +135,7 @@ export function createTelegramSource(
       auth.status('Connecting to Telegram…');
       await client.connect();
       try {
-        // GramJS swallows the real failure and throws AUTH_USER_CANCEL when
+        // teleproto swallows the real failure and throws AUTH_USER_CANCEL when
         // onError returns true — capture it so the user sees the cause.
         let pairError: Error | null = null;
         try {
@@ -150,7 +149,7 @@ export function createTelegramSource(
                     'Scan with Telegram on your phone: Settings → Devices → Link Desktop Device',
                   );
                 },
-                // GramJS drives the 2FA (SESSION_PASSWORD_NEEDED) flow through
+                // teleproto drives the 2FA (SESSION_PASSWORD_NEEDED) flow through
                 // this callback itself; onError only sees other failures.
                 password: async (hint) => {
                   const a = await auth.prompt(passwordSchema(hint));

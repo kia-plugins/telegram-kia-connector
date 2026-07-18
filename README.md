@@ -2,7 +2,8 @@
 
 A Telegram connector for KIAgent (extension platform). It signs in to your
 Telegram account as a third-party client through the official MTProto API
-(via [GramJS](https://github.com/gram-js/gramjs)) and ingests your DMs and
+(via [teleproto](https://github.com/sanyok12345/teleproto), the maintained
+fork of GramJS) and ingests your DMs and
 group chats — one searchable document per chat per day, plus downloaded
 media — into your local KIAgent digital memory.
 
@@ -29,7 +30,7 @@ device you can see and revoke at any time (Settings → Devices).
 Install **Telegram** from the KIAgent marketplace. KIAgent prompts for the
 two grants this connector needs:
 
-- `net` — the connector talks to Telegram's servers over GramJS's own
+- `net` — the connector talks to Telegram's servers over teleproto's own
   connection.
 - `query` — it re-reads its own previously-ingested chat-day documents so
   new messages merge into existing days across restarts.

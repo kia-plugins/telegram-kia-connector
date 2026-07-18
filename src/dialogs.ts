@@ -2,7 +2,7 @@
  * Which conversations get indexed: user DMs (not bots, not Telegram's 777000
  * service account, Saved Messages included), basic groups, and megagroups.
  * Broadcast channels are out — they're feeds, not personal memory. Megagroups
- * report BOTH isGroup and isChannel in GramJS; the isGroup check runs first
+ * report BOTH isGroup and isChannel in teleproto; the isGroup check runs first
  * so they land as groups.
  */
 import type { IncludedChat } from './types';
@@ -13,7 +13,7 @@ export interface RawDialogLike {
   isUser: boolean;
   isGroup: boolean;
   isChannel: boolean;
-  /** GramJS BigInteger (marked id) — anything with toString(). */
+  /** teleproto BigInteger (marked id) — anything with toString(). */
   id?: unknown;
   name?: string;
   title?: string;
