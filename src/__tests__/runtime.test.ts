@@ -68,6 +68,14 @@ function makeRuntime(over: Partial<RuntimeDeps> & { client: FakeClient }) {
 const msg = (id: number, dateSec: number, text: string, extra: Partial<RawMessageLike> = {}): RawMessageLike =>
   ({ id, date: dateSec, message: text, sender: { firstName: 'Ada' }, ...extra });
 
+/** Next batch that carries items — skips the empty catch-up marker batch. */
+async function nextItemBatch(rt: TelegramPullRuntime) {
+  for (;;) {
+    const b = await rt.nextBatch();
+    if (b === null || b.items.length > 0) return b;
+  }
+}
+
 describe('TelegramPullRuntime', () => {
   it('backfills dialogs into merged day batches with cursor snapshots', async () => {
     const client = new FakeClient();
@@ -115,6 +123,21 @@ describe('TelegramPullRuntime', () => {
     await rt.stop();
   });
 
+  it('pushes an empty live-phase marker when the walk catches up with no live traffic', async () => {
+    const client = new FakeClient();
+    client.dialogs = [userDialog('42', 'Ada')];
+    client.messagesByChat['42'] = [msg(1, 1750_000_000, 'hello')];
+    const { rt } = makeRuntime({ client });
+    await rt.start();
+    const backfill = await rt.nextBatch();
+    expect(backfill?.phase).toBe('backfill');
+    // No live event ever fires — the engine only flips an account's status
+    // on a live-phase batch commit, so the walk's end must push a marker.
+    const marker = await rt.nextBatch();
+    expect(marker).toMatchObject({ phase: 'live', items: [] });
+    await rt.stop();
+  });
+
   it('ignores live events for excluded or unknown chats', async () => {
     const client = new FakeClient();
     client.dialogs = [userDialog('42', 'Ada')];
@@ -125,9 +148,10 @@ describe('TelegramPullRuntime', () => {
     const newHandler = client.handlers.find((h) => (h.ev as { tag: string }).tag === 'new')!;
     await newHandler.cb({ chatId: { toString: () => '999' }, message: msg(9, 1750_000_900, 'spam') });
     await rt.stop();
-    const drained: unknown[] = [];
-    for (;;) { const b = await rt.nextBatch(); if (b === null) break; drained.push(b); }
-    expect(drained).toEqual([]);
+    const drained: Array<{ items: unknown[] }> = [];
+    for (;;) { const b = await rt.nextBatch(); if (b === null) break; drained.push(b!); }
+    // The catch-up marker batch may be present, but nothing carries items.
+    expect(drained.flatMap((b) => b.items)).toEqual([]);
   });
 
   it('downloads in-window media as file items parented after the day, skipping stored and oversized', async () => {
@@ -208,7 +232,11 @@ describe('TelegramPullRuntime', () => {
       },
     });
     await rt.start();
-    expect(await rt.nextBatch()).not.toBeNull(); // drain the backfill batch — sync point
+    expect((await rt.nextBatch())?.phase).toBe('backfill'); // drain the backfill batch
+    // Drain the catch-up marker too: awaiting it guarantees the walk-end
+    // flush ran on EMPTY buckets (no loadPriorMessages call), keeping the
+    // call-count trigger below deterministic.
+    expect(await rt.nextBatch()).toMatchObject({ phase: 'live', items: [] });
     const newHandler = client.handlers.find((h) => (h.ev as { tag: string }).tag === 'new')!;
 
     // Live message A: its debounced flush enters doFlush and parks mid-await.
@@ -226,7 +254,7 @@ describe('TelegramPullRuntime', () => {
 
     openGate(); // let the parked flush finish
 
-    const batch1 = await rt.nextBatch();
+    const batch1 = await nextItemBatch(rt);
     const day1 = batch1!.items[0] as DayItem;
     expect(day1.messages.some((m) => m.id === '1')).toBe(true); // A delivered
 
@@ -236,7 +264,7 @@ describe('TelegramPullRuntime', () => {
     // re-armed debounce flushes it on its own.
     const TIMEOUT = Symbol('timeout');
     const raced = await Promise.race([
-      rt.nextBatch(),
+      nextItemBatch(rt),
       new Promise((resolve) => setTimeout(() => resolve(TIMEOUT), 300)),
     ]);
     expect(raced).not.toBe(TIMEOUT);
@@ -269,7 +297,11 @@ describe('TelegramPullRuntime', () => {
       log: (level, msg) => { logs.push({ level, msg }); },
     });
     await rt.start();
-    expect(await rt.nextBatch()).not.toBeNull(); // drain the backfill batch — sync point
+    expect((await rt.nextBatch())?.phase).toBe('backfill'); // drain the backfill batch
+    // Drain the catch-up marker too: awaiting it guarantees the walk-end
+    // flush ran on EMPTY buckets (no loadPriorMessages call), keeping the
+    // call-count trigger below deterministic.
+    expect(await rt.nextBatch()).toMatchObject({ phase: 'live', items: [] });
     const newHandler = client.handlers.find((h) => (h.ev as { tag: string }).tag === 'new')!;
 
     // First live message: its debounced flush calls loadPriorMessages (call
@@ -287,7 +319,7 @@ describe('TelegramPullRuntime', () => {
       chatId: { toString: () => '42' },
       message: msg(2, 1750_000_600, 'second'),
     });
-    const batch = await rt.nextBatch();
+    const batch = await nextItemBatch(rt);
     expect(batch).not.toBeNull();
     const day = batch!.items[0] as DayItem;
     expect(day.messages.some((m) => m.id === '2')).toBe(true);

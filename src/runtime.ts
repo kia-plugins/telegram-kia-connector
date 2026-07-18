@@ -156,6 +156,17 @@ export class TelegramPullRuntime {
       .then(() => {
         this.walking = false;
         this.deps.log('info', 'telegram: history walk caught up — live only');
+        // The engine flips an account's status only on a live-phase batch
+        // commit — flush any residue, then push an empty marker so an
+        // account with no incoming traffic still leaves 'backfilling'.
+        void this.flush('live').then(() => {
+          if (this.stopped || this.fatalError) return;
+          this.queue.push({
+            phase: 'live',
+            items: [],
+            cursor: JSON.parse(JSON.stringify(this.cursor)) as TelegramCursor,
+          });
+        });
       })
       .catch((err: Error) => {
         this.fatal(err);
