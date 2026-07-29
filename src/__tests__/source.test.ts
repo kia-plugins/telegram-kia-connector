@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { saveAuthBlob, type AuthBlob } from '../auth';
 import type { QrSignInParams } from '../client';
-import type { AuthChannel, Document, Session } from '../kiagent-contracts';
+import type { AuthChannel, Document, Session } from '@kiagent/connector-sdk';
 import { buildRef } from '../media';
 import { createTelegramSource, type TelegramHost } from '../source';
 import type { DayItem, FileItem, NormalizedMessage, TelegramItem } from '../types';

@@ -1,11 +1,23 @@
 import {
-  DOC_TYPE,
   dayKey,
   dayTitle,
   mergeMessages,
   renderDay,
-} from '../chat-day';
+} from '@kiagent/connector-sdk/chat-day';
+
+import { DOC_TYPE } from '../types';
 import type { NormalizedMessage } from '../types';
+
+const mergeByTs = (
+  existing: NormalizedMessage[],
+  incoming: NormalizedMessage[],
+) =>
+  mergeMessages(
+    existing,
+    incoming,
+    (m) => m.tsMs,
+    (a, b) => Number(a) - Number(b),
+  );
 
 const msg = (over: Partial<NormalizedMessage>): NormalizedMessage => ({
   id: '1',
@@ -36,7 +48,7 @@ describe('chat-day', () => {
       msg({ id: 'a', tsMs: 1000, text: 'edited' }),
       msg({ id: 'b', tsMs: 500 }),
     ];
-    const merged = mergeMessages(existing, incoming);
+    const merged = mergeByTs(existing, incoming);
     expect(merged.map((m) => m.id)).toEqual(['b', 'a']);
     expect(merged[1].text).toBe('edited');
   });
@@ -47,7 +59,7 @@ describe('chat-day', () => {
       msg({ id: '10', tsMs: sameTs }),
       msg({ id: '9', tsMs: sameTs }),
     ];
-    const merged = mergeMessages([], incoming);
+    const merged = mergeByTs([], incoming);
     // Numeric comparison: 9 < 10, not lexicographic where '10' < '9'
     expect(merged.map((m) => m.id)).toEqual(['9', '10']);
   });

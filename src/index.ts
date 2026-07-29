@@ -1,4 +1,4 @@
-import type { ExtensionModule } from './kiagent-contracts';
+import type { ExtensionModule } from '@kiagent/connector-sdk';
 import { createTelegramSource } from './source';
 
 const mod = {

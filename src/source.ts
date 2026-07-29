@@ -11,19 +11,20 @@ import path from 'node:path';
 
 import { EditedMessage, NewMessage } from 'teleproto/events';
 
+import { dayTitle, renderDay } from '@kiagent/connector-sdk/chat-day';
+import {
+  SourceAuthError,
+  type AuthChannel,
+  type Batch,
+  type Document,
+  type DocumentInput,
+  type HostFor,
+  type Session,
+  type Source,
+} from '@kiagent/connector-sdk';
+
 import { loadAuthBlob, saveAuthBlob, type AuthBlob } from './auth';
-import { DOC_TYPE, dayTitle, renderDay } from './chat-day';
 import { makeTelegramClient, type TgClient } from './client';
-import type {
-  AuthChannel,
-  Batch,
-  Document,
-  DocumentInput,
-  HostFor,
-  Session,
-  Source,
-} from './kiagent-contracts';
-import { SourceAuthError } from './kiagent-source-errors';
 import {
   extOf,
   FILE_DOC_TYPE,
@@ -32,10 +33,11 @@ import {
   parseRef,
 } from './media';
 import { TelegramPullRuntime } from './runtime';
-import type {
-  NormalizedMessage,
-  TelegramCursor,
-  TelegramItem,
+import {
+  DOC_TYPE,
+  type NormalizedMessage,
+  type TelegramCursor,
+  type TelegramItem,
 } from './types';
 
 export type TelegramHost = HostFor<'net' | 'query'>;

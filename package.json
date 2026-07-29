@@ -1,6 +1,6 @@
 {
   "name": "telegram-kia-connector",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Telegram connector for KIAgent (extension platform, teleproto-based).",
   "license": "MIT",
   "private": false,
@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@kiagent/connector-sdk": "https://github.com/edjafarov/kiagent-core/releases/download/sdk-v1.0.0/kiagent-connector-sdk-1.0.0.tgz",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.0",
     "esbuild": "0.23.1",

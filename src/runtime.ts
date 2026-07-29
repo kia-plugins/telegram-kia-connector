@@ -6,7 +6,9 @@
  * WhatsApp connector's runtime discipline: the open generator IS the
  * realtime path, flushes are serialized, stop() is idempotent.
  */
-import { dayKey, mergeMessages } from './chat-day';
+import { dayKey, mergeMessages } from '@kiagent/connector-sdk/chat-day';
+import type { Batch, LogLevel } from '@kiagent/connector-sdk';
+
 import type { TgClient } from './client';
 import { classifyDialog, type RawDialogLike } from './dialogs';
 import {
@@ -19,7 +21,6 @@ import {
 } from './media';
 import { normalizeMessage, type RawMessageLike } from './messages';
 import { AsyncBatchQueue } from './queue';
-import type { Batch, LogLevel } from './kiagent-contracts';
 import type {
   ChatInfo,
   FileItem,
@@ -349,7 +350,12 @@ export class TelegramPullRuntime {
             kind: 'day',
             chat: bucket.chat,
             day,
-            messages: mergeMessages(prior, incoming),
+            messages: mergeMessages(
+              prior,
+              incoming,
+              (m) => m.tsMs,
+              (a, b) => Number(a) - Number(b),
+            ),
           });
         }
       }

@@ -1,32 +1,20 @@
-/** A single chat message after normalization from either ingest path. */
-export interface NormalizedMessage {
-  /** Stable id: Telegram's per-chat message id as a string. */
-  id: string;
-  /** Epoch milliseconds (Telegram's date is seconds — converted upstream). */
-  tsMs: number;
-  /** Display name of the sender, already resolved. null ⇒ system message. */
-  sender: string | null;
-  /** Plain text body (caption for media, '' for pure media messages). */
-  text: string;
-  /** Present when the message carries media. */
-  media?: MediaDescriptor;
-  /** Quoted/replied-to message, rendered inline. */
-  quote?: { sender: string | null; snippet: string };
-  /** True for Telegram service messages ("X joined", pins, calls…). */
-  system: boolean;
-}
+/** Normalized-message and media shapes now live in the shared chat-day
+ *  module — imported (for local use below) AND re-exported here so the rest
+ *  of the repo keeps importing them from './types' (import paths stay
+ *  stable across the connector-sdk migration; see
+ *  docs/connectors-authoring-guide.md §7). */
+import type {
+  NormalizedMessage,
+  MediaKind,
+  MediaDescriptor,
+} from '@kiagent/connector-sdk/chat-day';
 
-export type MediaKind = 'image' | 'video' | 'audio' | 'document' | 'sticker';
+export type { NormalizedMessage, MediaKind, MediaDescriptor };
 
-export interface MediaDescriptor {
-  kind: MediaKind;
-  /** Original filename if known (document messages). */
-  filename?: string;
-  /** Mime type if known. */
-  mimeType?: string;
-  /** Duration seconds for audio/video, for the placeholder label. */
-  durationSec?: number;
-}
+/** Telegram's chat-day document type — was src/chat-day.ts, folded in here
+ *  now that chat-day.ts holds nothing else (dayKey/dayTitle/mergeMessages/
+ *  renderDay come straight from '@kiagent/connector-sdk/chat-day'). */
+export const DOC_TYPE = 'telegram.chat_day';
 
 /** Resolved chat identity at flush time. */
 export interface ChatInfo {

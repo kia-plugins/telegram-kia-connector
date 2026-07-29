@@ -180,6 +180,32 @@ describe('TelegramPullRuntime', () => {
     await rt.stop();
   });
 
+  it('merges concurrent same-timestamp live messages by NUMERIC id, not lexical, via the real doFlush path', async () => {
+    const client = new FakeClient();
+    client.dialogs = [userDialog('42', 'Ada')];
+    const { rt } = makeRuntime({ client });
+    await rt.start();
+    await new Promise((r) => setTimeout(r, 10)); // let the (empty) walk finish
+    const newHandler = client.handlers.find((h) => (h.ev as { tag: string }).tag === 'new')!;
+    const sameSec = 1750_000_500;
+    // Arrival order deliberately inverted: under the connector-sdk's default
+    // LEXICAL compareIds, '10'.localeCompare('9') sorts '10' before '9' — the
+    // merged order only comes out ['9','10'] if runtime.ts's doFlush call
+    // site still passes the NUMERIC tie-break comparator to mergeMessages
+    // (the CRITICAL requirement this migration must preserve).
+    await newHandler.cb({ chatId: { toString: () => '42' }, message: msg(10, sameSec, 'ten') });
+    await newHandler.cb({ chatId: { toString: () => '42' }, message: msg(9, sameSec, 'nine') });
+    await rt.stop();
+    const items: unknown[] = [];
+    for (;;) {
+      const b = await rt.nextBatch();
+      if (b === null) break;
+      items.push(...b.items);
+    }
+    const day = items.find((i): i is DayItem => (i as DayItem).kind === 'day')!;
+    expect(day.messages.map((m) => m.id)).toEqual(['9', '10']);
+  });
+
   it('marks loggedOut on auth-loss walker errors and closes the queue', async () => {
     const client = new FakeClient();
     client.dialogs = [userDialog('42', 'Ada')];
