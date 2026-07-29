@@ -10,7 +10,7 @@ import bigInt from 'big-integer';
 
 import type { MediaDescriptor, MediaKind } from './types';
 
-export const FILE_DOC_TYPE = 'telegram.file';
+export const FILE_DOC_TYPE = 'file';
 
 /** Download cap; larger media stays a placeholder (no bytes fetched). */
 export const MEDIA_SIZE_CAP_BYTES = 25 * 1024 * 1024;

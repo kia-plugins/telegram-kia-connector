@@ -23,6 +23,7 @@ import type {
   Session,
   Source,
 } from './kiagent-contracts';
+import { SourceAuthError } from './kiagent-source-errors';
 import {
   extOf,
   FILE_DOC_TYPE,
@@ -199,13 +200,13 @@ export function createTelegramSource(
       const authFile = (session.account.config as { authFile?: unknown })
         ?.authFile;
       if (typeof authFile !== 'string' || authFile.length === 0) {
-        throw new Error(NOT_PAIRED);
+        throw new SourceAuthError(NOT_PAIRED);
       }
       const blob = loadAuthBlob(
         path.join(host.self.dataDir, authFile),
         (m) => session.log('warn', m),
       );
-      if (!blob || blob.session.length === 0) throw new Error(NOT_PAIRED);
+      if (!blob || blob.session.length === 0) throw new SourceAuthError(NOT_PAIRED);
 
       const runtime = new TelegramPullRuntime({
         client: makeClient(blob),
@@ -256,9 +257,9 @@ export function createTelegramSource(
       if (runtime.loggedOut) {
         // Auth error propagates (engine records lastError); shaped so
         // isAuthError()-style checks recognize it.
-        const err = new Error(
+        const err = new SourceAuthError(
           'telegram: logged out (401 unauthenticated) — reconnect the account',
-        ) as Error & { status: number };
+        ) as SourceAuthError & { status: number };
         err.status = 401;
         throw err;
       }

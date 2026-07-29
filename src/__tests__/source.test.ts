@@ -3,10 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { saveAuthBlob, type AuthBlob } from '../auth';
-import { DOC_TYPE } from '../chat-day';
 import type { QrSignInParams } from '../client';
 import type { AuthChannel, Document, Session } from '../kiagent-contracts';
-import { buildRef, FILE_DOC_TYPE } from '../media';
+import { buildRef } from '../media';
 import { createTelegramSource, type TelegramHost } from '../source';
 import type { DayItem, FileItem, NormalizedMessage, TelegramItem } from '../types';
 
@@ -130,7 +129,7 @@ describe('descriptor', () => {
       id: 'telegram',
       auth: 'pairing',
       multiAccount: true,
-      documentTypes: [DOC_TYPE, FILE_DOC_TYPE],
+      documentTypes: ['telegram.chat_day', 'file'],
     });
   });
 });
@@ -204,9 +203,15 @@ describe('pull', () => {
     const { host } = makeHost();
     const src = createTelegramSource(host, { events: EV });
     const { session } = makeSession({ config: {} });
-    await expect(drain(src.pull(session, null))).rejects.toThrow(/not paired/);
+    await expect(drain(src.pull(session, null))).rejects.toMatchObject({
+      message: expect.stringContaining('not paired'),
+      code: 'auth',
+    });
     const { session: s2 } = makeSession(); // config points at a missing file
-    await expect(drain(src.pull(s2, null))).rejects.toThrow(/not paired/);
+    await expect(drain(src.pull(s2, null))).rejects.toMatchObject({
+      message: expect.stringContaining('not paired'),
+      code: 'auth',
+    });
   });
 
   it('yields backfill batches and stops cleanly on abort', async () => {
@@ -234,7 +239,7 @@ describe('pull', () => {
     client.failWalkWith = new Error('AUTH_KEY_UNREGISTERED');
     const src = createTelegramSource(host, { makeClient: () => client, events: EV });
     const { session } = makeSession();
-    await expect(drain(src.pull(session, null))).rejects.toMatchObject({ status: 401 });
+    await expect(drain(src.pull(session, null))).rejects.toMatchObject({ status: 401, code: 'auth' });
   });
 });
 
@@ -254,7 +259,7 @@ describe('toDocument', () => {
     }) as unknown as Record<string, unknown>;
     expect(doc).toMatchObject({
       externalId: '42:2026-07-17',
-      type: DOC_TYPE,
+      type: 'telegram.chat_day',
       title: 'Ada — Jul 17, 2026',
       url: 'telegram://chat?id=42',
       metadata: {
@@ -278,10 +283,10 @@ describe('toDocument', () => {
     const doc = src.toDocument(item) as unknown as Record<string, unknown>;
     expect(doc).toMatchObject({
       externalId: '42:2',
-      type: FILE_DOC_TYPE,
+      type: 'file',
       title: 'a.pdf',
       markdown: null,
-      parent: { externalId: '42:2026-07-17', type: DOC_TYPE },
+      parent: { externalId: '42:2026-07-17', type: 'telegram.chat_day' },
       metadata: {
         chat_key: '42', sizeBytes: 2, mime: 'application/pdf',
         filename: 'a.pdf', ext: 'pdf', tg_msg: item.ref,

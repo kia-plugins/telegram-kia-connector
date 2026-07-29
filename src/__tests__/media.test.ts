@@ -116,7 +116,7 @@ describe('sizes and names', () => {
   });
 
   it('exports constants', () => {
-    expect(FILE_DOC_TYPE).toBe('telegram.file');
+    expect(FILE_DOC_TYPE).toBe('file');
     expect(MEDIA_SIZE_CAP_BYTES).toBe(25 * 1024 * 1024);
   });
 });

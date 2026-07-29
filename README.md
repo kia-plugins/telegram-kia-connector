@@ -66,7 +66,7 @@ two grants this connector needs:
   hours on an old account. Telegram rate limits (FLOOD_WAIT) are expected
   during this walk; the connector sleeps them out and continues.
 - **Media files** (photos, videos, voice notes, documents, stickers) up to
-  **25 MiB** land as `telegram.file` documents parented to their chat-day,
+  **25 MiB** land as `file` documents parented to their chat-day,
   ready for KIAgent's OCR / transcription. During the historical backfill,
   media bytes are fetched only for the last **180 days** (older messages
   keep their text label); everything from the live phase onward is fetched.
