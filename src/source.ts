@@ -257,13 +257,10 @@ export function createTelegramSource(
         await runtime.stop();
       }
       if (runtime.loggedOut) {
-        // Auth error propagates (engine records lastError); shaped so
-        // isAuthError()-style checks recognize it.
-        const err = new SourceAuthError(
+        // Auth error propagates; the engine classifies by the `code` property.
+        throw new SourceAuthError(
           'telegram: logged out (401 unauthenticated) — reconnect the account',
-        ) as SourceAuthError & { status: number };
-        err.status = 401;
-        throw err;
+        );
       }
       if (runtime.fatalError) throw runtime.fatalError;
     },

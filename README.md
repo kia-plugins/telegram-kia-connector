@@ -83,8 +83,7 @@ npm run typecheck
 npm run build     # esbuild → dist/index.js
 ```
 
-`src/kiagent-contracts.ts` is a vendored snapshot of the KIAgent platform
-contract — do not edit it here.
+Platform contracts come from `@kiagent/connector-sdk` (devDependency).
 
 ## License
 

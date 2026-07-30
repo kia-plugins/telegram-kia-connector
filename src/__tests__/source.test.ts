@@ -231,7 +231,7 @@ describe('pull', () => {
     expect(client.disconnects).toBeGreaterThan(0);
   });
 
-  it('throws a 401-shaped error after auth loss', async () => {
+  it('throws an auth-coded error after auth loss', async () => {
     const { host, dataDir } = makeHost();
     saveAuthBlob(path.join(dataDir, 'auth/42.json'), blob);
     const client = new FakeSyncClient();
@@ -239,7 +239,7 @@ describe('pull', () => {
     client.failWalkWith = new Error('AUTH_KEY_UNREGISTERED');
     const src = createTelegramSource(host, { makeClient: () => client, events: EV });
     const { session } = makeSession();
-    await expect(drain(src.pull(session, null))).rejects.toMatchObject({ status: 401, code: 'auth' });
+    await expect(drain(src.pull(session, null))).rejects.toMatchObject({ code: 'auth' });
   });
 });
 

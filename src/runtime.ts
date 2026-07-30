@@ -146,7 +146,7 @@ export class TelegramPullRuntime {
       signal: this.ctrl.signal,
       emitMessage: (chat, m) => this.ingest(chat, m, 'backfill'),
       commitPoint: () => this.flush('backfill'),
-      // WalkerDeps allows a 'debug' level the vendored LogLevel doesn't;
+      // WalkerDeps allows a 'debug' level the SDK's LogLevel doesn't;
       // map it to 'info' so a future walker 'debug' call can't leak an
       // out-of-union value to the host.
       log: (l, m) => this.deps.log(l === 'debug' ? 'info' : l, m),
