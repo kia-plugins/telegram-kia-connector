@@ -1,7 +1,7 @@
 {
   "id": "kia.telegram",
   "name": "Telegram",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "engine": ">=1.2.0 <3.0.0",
   "entry": "dist/index.js",
   "caps": [
