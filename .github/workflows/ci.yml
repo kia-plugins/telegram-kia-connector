@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # Some transitive deps (e.g. Baileys' libsignal) resolve via git+ssh;
+      # the runner has no SSH key, so fetch GitHub over HTTPS instead.
+      - run: git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+      - run: npm ci
+      - name: Versions agree (manifest.json, package.json, package-lock.json, tag)
+        run: |
+          node -e '
+            const m = require("./manifest.json");
+            const p = require("./package.json");
+            const l = require("./package-lock.json");
+            const seen = { manifest: m.version, package: p.version, lock: l.version, lockRoot: l.packages[""].version };
+            const ref = process.env.GITHUB_REF || "";
+            if (ref.startsWith("refs/tags/v")) seen.tag = ref.slice("refs/tags/v".length);
+            const distinct = new Set(Object.values(seen));
+            if (distinct.size !== 1) { console.error("version mismatch:", seen); process.exit(1); }
+            console.log("version", m.version, "consistent across", Object.keys(seen).join(", "));
+          '
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Package contains a loadable manifest and entry
+        run: |
+          npm pack
+          mkdir -p .pack && tar xzf *.tgz -C .pack
+          node -e '
+            const fs = require("fs");
+            const m = JSON.parse(fs.readFileSync(".pack/package/manifest.json", "utf8"));
+            for (const f of [m.entry, m.icon].filter(Boolean)) {
+              if (!fs.existsSync(".pack/package/" + f)) { console.error("missing in package:", f); process.exit(1); }
+            }
+            if (fs.existsSync(".pack/package/data")) { console.error("package ships data/"); process.exit(1); }
+            console.log("package ok:", m.id, m.version);
+          '
