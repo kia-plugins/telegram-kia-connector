@@ -32,6 +32,7 @@ import {
   MEDIA_SIZE_CAP_BYTES,
   parseRef,
 } from './media';
+import { outboundFor } from './outbound';
 import { TelegramPullRuntime } from './runtime';
 import {
   DOC_TYPE,
@@ -269,6 +270,7 @@ export function createTelegramSource(
       if (item.kind === 'day') {
         const { chat, day, messages } = item;
         const last = messages[messages.length - 1];
+        const outbound = outboundFor(chat, messages);
         return {
           externalId: `${chat.chatId}:${day}`,
           type: DOC_TYPE,
@@ -279,6 +281,8 @@ export function createTelegramSource(
             chat_key: chat.chatId,
             chat_key_kind: 'tg_chat_id',
             chat_type: chat.type,
+            // Reply targets for kiagent-core's draft_reply (outbound.ts).
+            ...(outbound ? { outbound } : {}),
             last_message_at: last ? new Date(last.tsMs).toISOString() : null,
             // Retained in full: the durable per-day ledger the next run
             // merges against (loadPriorMessages).

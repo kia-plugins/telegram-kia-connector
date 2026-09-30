@@ -22,6 +22,10 @@ export interface ChatInfo {
   chatId: string;
   name: string;
   type: 'dm' | 'group';
+  /** Peer class + access hash (media.ts peerOfEntity) — what a fresh client
+   *  needs to address this chat without an entity cache. Absent when the
+   *  entity's class is unknown: the day doc then carries no reply target. */
+  peer?: { peer: 'user' | 'chat' | 'channel'; accessHash?: string };
 }
 
 /** Per-chat walk state — the unit of backfill/catch-up resumability. */

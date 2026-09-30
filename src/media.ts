@@ -131,16 +131,21 @@ export function parseRef(s: unknown): TgRef | null {
   }
 }
 
-/** Marked chat id → bare positive id (strip '-100' channel / '-' chat marks). */
-function bareId(chatId: string): ReturnType<typeof bigInt> {
-  if (chatId.startsWith('-100')) return bigInt(chatId.slice(4));
-  if (chatId.startsWith('-')) return bigInt(chatId.slice(1));
+/** Marked chat id → bare positive id, by the frozen peer class: a channel
+ *  carries '-100', a basic group '-', a user nothing. Decoding by prefix
+ *  alone would read basic group 100012345 (marked '-100012345') as channel
+ *  12345 — a different chat. */
+function bareId(chatId: string, peer: TgRef['peer']): ReturnType<typeof bigInt> {
+  if (peer === 'channel' && chatId.startsWith('-100')) return bigInt(chatId.slice(4));
+  if (peer === 'chat' && chatId.startsWith('-')) return bigInt(chatId.slice(1));
   return bigInt(chatId);
 }
 
-/** Rebuild the InputPeer for getMessages from the ref alone. */
-export function inputPeerFor(ref: TgRef): unknown {
-  const id = bareId(ref.chatId);
+/** Rebuild the InputPeer from a ref alone (media re-fetch, outbound send). */
+export function inputPeerFor(
+  ref: Omit<TgRef, 'msgId'> & { msgId?: number },
+): unknown {
+  const id = bareId(ref.chatId, ref.peer);
   const hash = bigInt(ref.accessHash ?? '0');
   if (ref.peer === 'user')
     return new Api.InputPeerUser({ userId: id, accessHash: hash });

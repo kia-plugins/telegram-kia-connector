@@ -230,11 +230,24 @@ export class TelegramPullRuntime {
     const chatBuckets =
       this.buckets.get(chat.chatId) ??
       this.buckets.set(chat.chatId, new Map()).get(chat.chatId)!;
+    const peer = peerOfEntity(chat.entity);
     const bucket =
       chatBuckets.get(day) ??
       chatBuckets
         .set(day, {
-          chat: { chatId: chat.chatId, name: chat.name, type: chat.type },
+          chat: {
+            chatId: chat.chatId,
+            name: chat.name,
+            type: chat.type,
+            ...(peer
+              ? {
+                  peer: {
+                    peer: peer.peer,
+                    ...(peer.accessHash !== undefined ? { accessHash: peer.accessHash } : {}),
+                  },
+                }
+              : {}),
+          },
           byId: new Map(),
         })
         .get(day)!;

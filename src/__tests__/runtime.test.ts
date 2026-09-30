@@ -37,6 +37,7 @@ class FakeClient {
   }
   async downloadMedia(message: unknown) { this.downloads.push(message); return this.downloadResult; }
   async getMessages() { return []; }
+  async sendMessage() { return { id: 0 }; }
   session = { save: () => 'sess' };
 }
 
@@ -93,7 +94,7 @@ describe('TelegramPullRuntime', () => {
     expect(batch?.phase).toBe('backfill');
     const day = batch!.items[0] as DayItem;
     expect(day.kind).toBe('day');
-    expect(day.chat).toEqual({ chatId: '42', name: 'Ada', type: 'dm' });
+    expect(day.chat).toEqual({ chatId: '42', name: 'Ada', type: 'dm', peer: { peer: 'user' } });
     // prior ledger merged in, ascending order
     expect(day.messages.map((m) => m.id)).toEqual(['0', '1', '2']);
     expect(batch!.cursor.chats['42']).toEqual({

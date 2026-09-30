@@ -59,6 +59,7 @@ class FakePairClient {
   iterMessages(): AsyncIterable<unknown> { return (async function* () {})(); }
   async downloadMedia(): Promise<Buffer | undefined> { return undefined; }
   async getMessages(): Promise<unknown[]> { return []; }
+  async sendMessage(): Promise<{ id?: unknown }> { return { id: 0 }; }
   addEventHandler() {}
 }
 
@@ -87,6 +88,7 @@ class FakeSyncClient extends FakePairClient {
   }
   async downloadMedia() { return this.mediaBuffer; }
   async getMessages() { return this.gotMessages; }
+  async sendMessage(): Promise<{ id?: unknown }> { return { id: 0 }; }
 }
 
 function makeSession(over: Partial<{ config: Record<string, unknown> }> = {}): {

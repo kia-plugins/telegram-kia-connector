@@ -44,6 +44,10 @@ export interface TgClient {
     opts?: Record<string, unknown>,
   ): Promise<Buffer | string | undefined>;
   getMessages(entity: unknown, params: { ids: number[] }): Promise<unknown[]>;
+  sendMessage(
+    entity: unknown,
+    params: { message: string; replyTo?: number },
+  ): Promise<{ id?: unknown }>;
   addEventHandler(
     cb: (event: unknown) => void | Promise<void>,
     event: unknown,
@@ -51,15 +55,21 @@ export interface TgClient {
   session: { save(): string };
 }
 
-export function makeTelegramClient(auth: AuthBlob): TgClient {
+/** `forSend`: the Sender's one-shot client. FLOOD_WAIT surfaces at once
+ *  (threshold 0) instead of teleproto sleeping and sending past the host's
+ *  send timeout; ONE request attempt and no auto-reconnect, so a request
+ *  that may already have reached Telegram is never re-sent (a later refusal
+ *  must not be read as "nothing was sent"). */
+export function makeTelegramClient(auth: AuthBlob, opts: { forSend?: boolean } = {}): TgClient {
   const client = new TelegramClient(
     new StringSession(auth.session),
     auth.apiId,
     auth.apiHash,
     {
       connectionRetries: 5,
-      autoReconnect: true,
-      floodSleepThreshold: FLOOD_SLEEP_THRESHOLD_S,
+      autoReconnect: !opts.forSend,
+      ...(opts.forSend ? { requestRetries: 1 } : {}),
+      floodSleepThreshold: opts.forSend ? 0 : FLOOD_SLEEP_THRESHOLD_S,
       deviceModel: 'KIAgent',
     },
   );
