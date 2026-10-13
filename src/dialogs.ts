@@ -3,7 +3,9 @@
  * service account, Saved Messages included), basic groups, and megagroups.
  * Broadcast channels are out — they're feeds, not personal memory. Megagroups
  * report BOTH isGroup and isChannel in teleproto; the isGroup check runs first
- * so they land as groups.
+ * so they land as groups. Basic groups upgraded to a supergroup (migratedTo),
+ * deactivated ones, and ChatForbidden (kicked / gone) are skipped — the first
+ * lives on as the supergroup dialog, the others have no readable history.
  */
 import type { IncludedChat } from './types';
 
@@ -32,6 +34,8 @@ export function classifyDialog(
   const entity = d.entity ?? {};
   const name = d.name ?? d.title ?? chatId;
   if (d.isGroup) {
+    const g = entity as { className?: string; migratedTo?: unknown; deactivated?: boolean };
+    if (g.className === 'ChatForbidden' || g.migratedTo || g.deactivated) return null;
     return { chatId, name, type: 'group', entity, lastMessageTsMs };
   }
   if (d.isChannel) return null; // broadcast

@@ -49,6 +49,40 @@ function makeDeps(over: Partial<WalkerDeps>): {
 }
 
 describe('walkChats', () => {
+  it('skips a chat whose history read fails and keeps walking the rest', async () => {
+    const warns: string[] = [];
+    const { deps, emitted } = makeDeps({
+      chats: [chat('bad'), chat('c1')],
+      client: {
+        iterMessages: (entity: unknown, params: { offsetId?: number }) => {
+          if ((entity as { chatId: string }).chatId === 'bad') {
+            return (async function* () {
+              throw Object.assign(new Error('CHANNEL_PRIVATE'), { errorMessage: 'CHANNEL_PRIVATE' });
+            })();
+          }
+          return fakeIter([msg(1, 100)])(entity, params);
+        },
+      },
+      log: (l, m) => { if (l === 'warn') warns.push(m); },
+    });
+    await walkChats(deps);
+    expect(emitted).toEqual([{ chatId: 'c1', id: 1 }]);
+    expect(deps.cursor.chats.bad?.complete).toBe(false); // retried next run
+    expect(warns.some((w) => w.includes('bad') && w.includes('CHANNEL_PRIVATE'))).toBe(true);
+  });
+
+  it('still throws errors the caller marks fatal (auth loss)', async () => {
+    const { deps } = makeDeps({
+      client: {
+        iterMessages: () => (async function* () {
+          throw Object.assign(new Error('AUTH_KEY_UNREGISTERED'), { errorMessage: 'AUTH_KEY_UNREGISTERED' });
+        })(),
+      },
+      isFatal: (err) => String((err as Error).message).includes('AUTH_KEY'),
+    });
+    await expect(walkChats(deps)).rejects.toThrow('AUTH_KEY_UNREGISTERED');
+  });
+
   it('walks a fresh chat to the bottom and marks it complete', async () => {
     const { deps, emitted } = makeDeps({
       client: { iterMessages: fakeIter([msg(3, 300), msg(2, 200), msg(1, 100)]) },
@@ -174,16 +208,6 @@ describe('walkChats', () => {
     ]);
     expect(deps.cursor.chats.c1.newestTsMs).toBe(900_000);
     expect(deps.cursor.chats.c1.complete).toBe(true);
-  });
-
-  it('rethrows non-flood errors', async () => {
-    const iter = () =>
-      (async function* () {
-        yield msg(2, 200);
-        throw new Error('AUTH_KEY_UNREGISTERED');
-      })();
-    const { deps } = makeDeps({ client: { iterMessages: iter } });
-    await expect(walkChats(deps)).rejects.toThrow('AUTH_KEY_UNREGISTERED');
   });
 
   it('stops promptly when aborted', async () => {

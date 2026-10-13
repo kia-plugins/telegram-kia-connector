@@ -128,7 +128,10 @@ export class TelegramPullRuntime {
     client.addEventHandler(this.onLiveEvent, this.deps.events.editedMessage);
 
     const included: IncludedChat[] = [];
-    for await (const raw of client.iterDialogs({ ignoreMigrated: true })) {
+    // NOT { ignoreMigrated: true }: teleproto's filter is inverted — it keeps
+    // only basic groups and drops every DM and supergroup. classifyDialog
+    // drops migrated basic groups itself.
+    for await (const raw of client.iterDialogs({})) {
       const chat = classifyDialog(raw as RawDialogLike, selfId);
       if (chat) included.push(chat);
     }
@@ -153,6 +156,7 @@ export class TelegramPullRuntime {
       commitEvery: this.deps.commitEvery,
       catchUpOverlapMs: this.deps.catchUpOverlapMs,
       sleep: this.deps.sleep,
+      isFatal: isAuthLossError,
     })
       .then(() => {
         this.walking = false;

@@ -19,8 +19,15 @@ class FakeClient {
   async getMe() { return { id: 1, firstName: 'Eldar' }; }
   async signInUserWithQrCode() { return {}; }
   addEventHandler(cb: Handler, ev: unknown) { this.handlers.push({ cb, ev }); }
-  iterDialogs(_p: { ignoreMigrated?: boolean }) {
-    const dialogs = this.dialogs;
+  /** Mirrors teleproto 1.228.3's (inverted) ignoreMigrated filter: with the
+   *  flag set it keeps ONLY entities carrying a `migratedTo` key — i.e. basic
+   *  groups — and drops every DM and supergroup. */
+  iterDialogs(p: { ignoreMigrated?: boolean } = {}) {
+    const dialogs = this.dialogs.filter((d) => {
+      if (!p.ignoreMigrated) return true;
+      const e = (d as { entity?: object }).entity;
+      return e !== undefined && 'migratedTo' in e;
+    });
     return (async function* () { for (const d of dialogs) yield d; })();
   }
   iterMessages(entity: unknown, params: { offsetId?: number }) {
@@ -102,6 +109,28 @@ describe('TelegramPullRuntime', () => {
     });
     await rt.stop();
     expect(client.disconnects).toBeGreaterThan(0);
+  });
+
+  it('walks DMs and supergroups, not only basic groups (teleproto ignoreMigrated trap)', async () => {
+    const client = new FakeClient();
+    client.dialogs = [
+      userDialog('42', 'Ada'),
+      {
+        isUser: false, isGroup: true, isChannel: true,
+        id: { toString: () => '-1007' }, name: 'Team', date: 1750_000_000,
+        entity: { className: 'Channel', megagroup: true, chatId: '-1007' },
+      },
+      {
+        isUser: false, isGroup: true, isChannel: false,
+        id: { toString: () => '-8' }, name: 'Old', date: 1750_000_000,
+        entity: { className: 'Chat', migratedTo: undefined, chatId: '-8' },
+      },
+    ];
+    const logs: string[] = [];
+    const { rt } = makeRuntime({ client, log: (_l, m) => { logs.push(m); } });
+    await rt.start();
+    expect(logs).toContain('telegram: syncing 3 chats (DMs + groups)');
+    await rt.stop();
   });
 
   it('flushes live events after the debounce, phase live, with quote lookup', async () => {

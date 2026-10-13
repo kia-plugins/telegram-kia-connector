@@ -30,6 +30,9 @@ export interface WalkerDeps {
   catchUpOverlapMs?: number;
   commitEvery?: number;
   sleep?: (ms: number) => Promise<void>;
+  /** Errors that must end the whole walk (auth loss). Any other non-flood
+   *  error skips just that chat — left incomplete, retried next run. */
+  isFatal?: (err: unknown) => boolean;
 }
 
 /** Seconds to wait when err is a Telegram flood error; null otherwise. */
@@ -100,7 +103,16 @@ export async function walkChats(deps: WalkerDeps): Promise<void> {
         done = true; // clean finish — a thrown flood lands in catch instead
       } catch (err) {
         const seconds = floodSeconds(err);
-        if (seconds === null) throw err;
+        if (seconds === null) {
+          if (deps.isFatal?.(err)) throw err;
+          const e = err as { errorMessage?: unknown; message?: unknown };
+          deps.log(
+            'warn',
+            `telegram: skipping ${chat.name} this run — ${String(e?.errorMessage ?? e?.message ?? err)}`,
+          );
+          await deps.commitPoint(); // keep whatever progress the chat made
+          break;
+        }
         deps.log(
           'warn',
           `telegram: FLOOD_WAIT ${seconds}s while walking ${chat.name} — sleeping`,

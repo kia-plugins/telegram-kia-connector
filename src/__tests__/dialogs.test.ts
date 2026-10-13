@@ -63,6 +63,30 @@ describe('classifyDialog', () => {
     ).toBeNull();
   });
 
+  it('excludes basic groups upgraded to a supergroup, deactivated, or forbidden', () => {
+    // the migrated basic group's history lives on in the supergroup dialog
+    expect(
+      classifyDialog(
+        dlg({ isGroup: true, entity: { className: 'Chat', migratedTo: { channelId: 9 } } }),
+        '1',
+      ),
+    ).toBeNull();
+    expect(
+      classifyDialog(dlg({ isGroup: true, entity: { className: 'Chat', deactivated: true } }), '1'),
+    ).toBeNull();
+    // kicked / group gone — history is unreadable
+    expect(
+      classifyDialog(dlg({ isGroup: true, entity: { className: 'ChatForbidden' } }), '1'),
+    ).toBeNull();
+    // a live basic group (migratedTo key present but empty) still counts
+    expect(
+      classifyDialog(
+        dlg({ isGroup: true, entity: { className: 'Chat', migratedTo: undefined } }),
+        '1',
+      )?.type,
+    ).toBe('group');
+  });
+
   it('falls back to title then id for the name and skips id-less dialogs', () => {
     expect(
       classifyDialog(
