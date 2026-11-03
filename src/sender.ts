@@ -18,16 +18,15 @@
  * error-copy.ts: `reconnect … in Settings` (auth), `rate-limited:` and
  * `not sent:` prove nothing left; anything else reads "may have been sent".
  */
-import path from 'node:path';
-
 import type {
   HostFor,
   SendIntent,
   SendResult,
   Sender,
+  SenderContext,
 } from '@kiagent/connector-sdk';
 
-import { loadAuthBlob, type AuthBlob } from './auth';
+import { blobFromCredentials, type AuthBlob } from './auth';
 import { makeTelegramClient, type TgClient } from './client';
 import { inputPeerFor } from './media';
 import { parseOutboundRef } from './outbound';
@@ -54,7 +53,7 @@ export function createTelegramSender(
   const deadlineMs = seams.deadlineMs ?? SEND_DEADLINE_MS;
 
   return {
-    async send(intent: SendIntent): Promise<SendResult> {
+    async send(intent: SendIntent, ctx?: SenderContext): Promise<SendResult> {
       const ref = parseOutboundRef(intent.outboundRef);
       if (!ref) throw new Error('not sent: this draft has no Telegram chat to reply to');
 
@@ -69,13 +68,10 @@ export function createTelegramSender(
         timer = setTimeout(() => reject(new DeadlineError()), deadlineMs);
       });
       const work = (async () => {
-        // The session lives in this extension's data dir, found through the
-        // account's config (a pairing source keeps nothing in the host vault).
-        const account = (await host.query.accounts()).find((a) => a.id === intent.accountId);
-        const authFile = (account?.config as { authFile?: unknown } | undefined)?.authFile;
-        if (typeof authFile !== 'string' || authFile.length === 0) throw new ReconnectError();
-        const blob = loadAuthBlob(path.join(host.self.dataDir, authFile));
-        if (!blob || blob.session.length === 0) throw new ReconnectError();
+        // The host resolves the account's vault row at send time (past the
+        // confirmation gate) and hands it over; a send never reads a file.
+        const blob = blobFromCredentials(ctx?.credentials);
+        if (!blob) throw new ReconnectError();
         if (abandoned) throw new DeadlineError();
         client = makeClient(blob, { forSend: true });
         await client.connect();

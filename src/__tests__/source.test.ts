@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { saveAuthBlob, type AuthBlob } from '../auth';
 import type { QrSignInParams } from '../client';
-import type { AuthChannel, Document, Session } from '@kiagent/connector-sdk';
+import type { AuthChannel, Credentials, Document, Session } from '@kiagent/connector-sdk';
 import { buildRef } from '../media';
 import { createTelegramSource, type TelegramHost } from '../source';
 import type { DayItem, FileItem, NormalizedMessage, TelegramItem } from '../types';
@@ -91,11 +91,23 @@ class FakeSyncClient extends FakePairClient {
   async sendMessage(): Promise<{ id?: unknown }> { return { id: 0 }; }
 }
 
-function makeSession(over: Partial<{ config: Record<string, unknown> }> = {}): {
+/** `vault` is the host's vault row for the account, live: saveCredentials
+ *  replaces it, as the real verb does. `events` records save/other order. */
+function makeSession(
+  over: Partial<{
+    config: Record<string, unknown>;
+    vault: Credentials | null;
+    saveFails: boolean;
+    onSave: () => void;
+  }> = {},
+): {
   session: Session; ctrl: AbortController; logs: string[];
+  vault: { current: Credentials | null }; saves: Credentials[];
 } {
   const ctrl = new AbortController();
   const logs: string[] = [];
+  const vault = { current: over.vault ?? null };
+  const saves: Credentials[] = [];
   const session = {
     account: {
       id: 'acc1',
@@ -103,13 +115,21 @@ function makeSession(over: Partial<{ config: Record<string, unknown> }> = {}): {
       config: over.config ?? { authFile: 'auth/42.json' },
     },
     signal: ctrl.signal,
-    credentials: async () => null,
+    credentials: async () => vault.current,
+    saveCredentials: async (c: Credentials) => {
+      if (over.saveFails) throw new Error('vault write failed');
+      over.onSave?.();
+      vault.current = c;
+      saves.push(c);
+    },
     log: (_l: string, m: string) => { logs.push(m); },
   } as unknown as Session;
-  return { session, ctrl, logs };
+  return { session, ctrl, logs, vault, saves };
 }
 
 const blob: AuthBlob = { apiId: 123, apiHash: 'h', session: 'S' };
+const SECRET_BLOB: AuthBlob = { apiId: 9, apiHash: 'HASH-IN-VAULT', session: 'SESSION-IN-VAULT' };
+const secretOf = (b: AuthBlob): Credentials => ({ secret: JSON.stringify(b) });
 
 async function drain(
   gen: AsyncIterable<{ phase: string; items: TelegramItem[] }>,
@@ -156,18 +176,21 @@ describe('connect', () => {
     expect(qrAt).toBeGreaterThan(hintAt);
   });
 
-  it('prompts for api creds, shows the QR deep link, saves the blob', async () => {
+  it('pairing returns a secret and leaves dataDir empty', async () => {
     const { host, dataDir } = makeHost();
     const client = new FakePairClient();
     const src = createTelegramSource(host, { makeClient: () => client, events: EV });
     const { channel, qrs } = makeAuthChannel([{ apiId: 123, apiHash: ' h ' }]);
     const res = await src.connect(channel);
-    expect(res).toEqual({ identifier: '42', config: { authFile: 'auth/42.json' } });
+    expect(res).toEqual({
+      identifier: '42',
+      credentials: {
+        secret: JSON.stringify({ apiId: 123, apiHash: 'h', session: 'SESSION_STRING' }),
+      },
+    });
+    expect(res).not.toHaveProperty('config');
     expect(qrs[0]).toBe(`tg://login?token=${Buffer.from('tok').toString('base64url')}`);
-    const saved = JSON.parse(
-      fs.readFileSync(path.join(dataDir, 'auth/42.json'), 'utf8'),
-    );
-    expect(saved).toEqual({ apiId: 123, apiHash: 'h', session: 'SESSION_STRING' });
+    expect(fs.readdirSync(dataDir)).toEqual([]);
     expect(client.disconnects).toBe(1);
   });
 
@@ -242,6 +265,151 @@ describe('pull', () => {
     const src = createTelegramSource(host, { makeClient: () => client, events: EV });
     const { session } = makeSession();
     await expect(drain(src.pull(session, null))).rejects.toMatchObject({ code: 'auth' });
+  });
+});
+
+describe('pull: the session lives in the vault', () => {
+  const syncClient = () => {
+    const c = new FakeSyncClient();
+    c.messages = [{ id: 1, date: 1750_000_000, message: 'hi', sender: { firstName: 'Ada' } }];
+    return c;
+  };
+  const authPath = (dataDir: string) => path.join(dataDir, 'auth/42.json');
+
+  it('pull with a secret opens the session without reading the file', async () => {
+    const { host, dataDir } = makeHost();
+    fs.mkdirSync(path.join(dataDir, 'auth'));
+    fs.writeFileSync(authPath(dataDir), 'junk that would warn if read');
+    const read = jest.spyOn(fs, 'readFileSync');
+    const made: AuthBlob[] = [];
+    const src = createTelegramSource(host, {
+      makeClient: (b) => (made.push(b), syncClient()), events: EV, flushDebounceMs: 5,
+    });
+    const { session, ctrl, logs } = makeSession({ vault: secretOf(SECRET_BLOB) });
+    await drain(src.pull(session, null), () => ctrl.abort());
+    const readFile = read.mock.calls.some((c) => String(c[0]) === authPath(dataDir));
+    read.mockRestore();
+    expect(readFile).toBe(false);
+    expect(made[0]).toEqual(SECRET_BLOB);
+    expect(logs.join('\n')).not.toContain('junk'); // the file was never parsed
+    // a leftover file is removed, unread
+    expect(fs.existsSync(authPath(dataDir))).toBe(false);
+  });
+
+  it('pull with a file and no secret saves the secret, then removes the file', async () => {
+    const { host, dataDir } = makeHost();
+    saveAuthBlob(authPath(dataDir), SECRET_BLOB);
+    const made: AuthBlob[] = [];
+    const src = createTelegramSource(host, {
+      makeClient: (b) => (made.push(b), syncClient()), events: EV, flushDebounceMs: 5,
+    });
+    let fileThereAtSave = false;
+    const { session, ctrl, saves } = makeSession({
+      vault: { password: 'twofa' },
+      onSave: () => { fileThereAtSave = fs.existsSync(authPath(dataDir)); },
+    });
+    await drain(src.pull(session, null), () => ctrl.abort());
+    expect(fileThereAtSave).toBe(true); // saved BEFORE the unlink
+    expect(saves).toEqual([{ password: 'twofa', secret: JSON.stringify(SECRET_BLOB) }]);
+    expect(fs.existsSync(authPath(dataDir))).toBe(false);
+    expect(made[0]).toEqual(SECRET_BLOB);
+  });
+
+  it('a failed save keeps the file, so the next pull migrates again', async () => {
+    const { host, dataDir } = makeHost();
+    saveAuthBlob(authPath(dataDir), SECRET_BLOB);
+    const src = createTelegramSource(host, { makeClient: () => syncClient(), events: EV });
+    const { session } = makeSession({ saveFails: true });
+    await expect(drain(src.pull(session, null))).rejects.toThrow('vault write failed');
+    expect(fs.existsSync(authPath(dataDir))).toBe(true);
+  });
+
+  it('crash after the save: the next pull removes the leftover file unread', async () => {
+    const { host, dataDir } = makeHost();
+    saveAuthBlob(authPath(dataDir), blob); // a DIFFERENT, stale session
+    const made: AuthBlob[] = [];
+    const src = createTelegramSource(host, {
+      makeClient: (b) => (made.push(b), syncClient()), events: EV, flushDebounceMs: 5,
+    });
+    const { session, ctrl, saves } = makeSession({ vault: secretOf(SECRET_BLOB) });
+    await drain(src.pull(session, null), () => ctrl.abort());
+    expect(made[0]).toEqual(SECRET_BLOB); // the vault wins over the file
+    expect(saves).toEqual([]);
+    expect(fs.existsSync(authPath(dataDir))).toBe(false);
+  });
+
+  it('malformed file with no secret: not paired, file kept', async () => {
+    const { host, dataDir } = makeHost();
+    fs.mkdirSync(path.join(dataDir, 'auth'));
+    fs.writeFileSync(authPath(dataDir), '{"apiId":"nope"}');
+    const src = createTelegramSource(host, { events: EV });
+    const { session, saves } = makeSession();
+    await expect(drain(src.pull(session, null))).rejects.toMatchObject({
+      message: expect.stringContaining('not paired'), code: 'auth',
+    });
+    expect(fs.existsSync(authPath(dataDir))).toBe(true);
+    expect(saves).toEqual([]);
+  });
+
+  it('a vault row holding only a 2FA password is not paired', async () => {
+    const { host } = makeHost();
+    const src = createTelegramSource(host, { events: EV });
+    const { session } = makeSession({ vault: { password: 'twofa' }, config: {} });
+    await expect(drain(src.pull(session, null))).rejects.toMatchObject({ code: 'auth' });
+  });
+
+  it('a malformed secret is not paired', async () => {
+    const { host } = makeHost();
+    const src = createTelegramSource(host, { events: EV });
+    const { session } = makeSession({ vault: { secret: 'not json' }, config: {} });
+    await expect(drain(src.pull(session, null))).rejects.toMatchObject({ code: 'auth' });
+  });
+
+  it('no secret in any log line', async () => {
+    const { host, dataDir } = makeHost();
+    fs.mkdirSync(path.join(dataDir, 'auth'));
+    fs.writeFileSync(authPath(dataDir), '{"apiId":"nope"}');
+    const hostLines: string[] = [];
+    (host as unknown as { log: (...a: unknown[]) => void }).log = (...a) => hostLines.push(a.join(' '));
+    const src = createTelegramSource(host, { events: EV });
+    const bad = makeSession({ vault: { secret: JSON.stringify({ ...SECRET_BLOB, apiId: 'x' }) } });
+    await drain(src.pull(bad.session, null)).catch(() => {});
+    const ok = makeSession({ vault: secretOf(SECRET_BLOB) });
+    const src2 = createTelegramSource(host, { makeClient: () => syncClient(), events: EV, flushDebounceMs: 5 });
+    await drain(src2.pull(ok.session, null), () => ok.ctrl.abort());
+    const all = [...bad.logs, ...ok.logs, ...hostLines].join('\n');
+    expect(all).not.toContain('SESSION-IN-VAULT');
+    expect(all).not.toContain('HASH-IN-VAULT');
+  });
+});
+
+describe('prepareExport', () => {
+  it('moves the session file into the vault before a join copies it', async () => {
+    const { host, dataDir } = makeHost();
+    saveAuthBlob(path.join(dataDir, 'auth/42.json'), SECRET_BLOB);
+    const src = createTelegramSource(host, { events: EV });
+    const saves: Credentials[] = [];
+    await src.prepareExport!({
+      account: { id: 'acc1', identifier: '42', config: { authFile: 'auth/42.json' } },
+      credentials: async () => null,
+      save: async (c: Credentials) => { saves.push(c); },
+      log: () => {},
+    } as never);
+    expect(saves).toEqual([secretOf(SECRET_BLOB)]);
+    expect(fs.existsSync(path.join(dataDir, 'auth/42.json'))).toBe(false);
+  });
+
+  it('does nothing when the vault already holds the session', async () => {
+    const { host } = makeHost();
+    const src = createTelegramSource(host, { events: EV });
+    const save = jest.fn();
+    await src.prepareExport!({
+      account: { id: 'acc1', identifier: '42', config: {} },
+      credentials: async () => secretOf(SECRET_BLOB),
+      save,
+      log: () => {},
+    } as never);
+    expect(save).not.toHaveBeenCalled();
   });
 });
 

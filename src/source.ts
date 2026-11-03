@@ -23,7 +23,7 @@ import {
   type Source,
 } from '@kiagent/connector-sdk';
 
-import { loadAuthBlob, saveAuthBlob, type AuthBlob } from './auth';
+import { blobFromCredentials, blobSecret, loadAuthBlob, resolveBlob, type AuthBlob } from './auth';
 import { makeTelegramClient, type TgClient } from './client';
 import {
   extOf,
@@ -105,6 +105,14 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
   });
 }
 
+/** The pre-1.2.0 session file this account's config names, or null. */
+function legacyFile(host: TelegramHost, account: { config?: unknown }): string | null {
+  const authFile = (account.config as { authFile?: unknown } | undefined)?.authFile;
+  return typeof authFile === 'string' && authFile.length > 0
+    ? path.join(host.self.dataDir, authFile)
+    : null;
+}
+
 export function createTelegramSource(
   host: TelegramHost,
   seams: TelegramSourceSeams = {},
@@ -177,16 +185,15 @@ export function createTelegramSource(
         // Numeric user id: stable across phone-number changes, so re-pairing
         // upserts the same account and overwrites the blob (self-healing).
         const identifier = String(me.id);
-        const authFile = `auth/${identifier}.json`;
-        saveAuthBlob(path.join(host.self.dataDir, authFile), {
-          apiId,
-          apiHash,
-          session: client.session.save(),
-        });
+        // The session goes to the host vault with the account (the engine
+        // saves what connect returns); nothing is written to disk here.
+        const credentials = {
+          secret: blobSecret({ apiId, apiHash, session: client.session.save() }),
+        };
         auth.status(
           `Linked ${me.firstName ?? me.username ?? identifier}. Syncing will start shortly.`,
         );
-        return { identifier, config: { authFile } };
+        return { identifier, credentials };
       } finally {
         try {
           await client.disconnect();
@@ -196,20 +203,28 @@ export function createTelegramSource(
       }
     },
 
+    /** A join copies the vault row, so a session still in the pre-1.2.0 file
+     *  must be in the vault first. */
+    async prepareExport(ctx) {
+      await resolveBlob({
+        credentials: () => ctx.credentials(),
+        save: (c) => ctx.save(c),
+        file: legacyFile(host, ctx.account),
+        warn: (m) => ctx.log('warn', m),
+      });
+    },
+
     async *pull(
       session: Session,
       cursor: TelegramCursor | null,
     ): AsyncGenerator<Batch<TelegramCursor, TelegramItem>> {
-      const authFile = (session.account.config as { authFile?: unknown })
-        ?.authFile;
-      if (typeof authFile !== 'string' || authFile.length === 0) {
-        throw new SourceAuthError(NOT_PAIRED);
-      }
-      const blob = loadAuthBlob(
-        path.join(host.self.dataDir, authFile),
-        (m) => session.log('warn', m),
-      );
-      if (!blob || blob.session.length === 0) throw new SourceAuthError(NOT_PAIRED);
+      const blob = await resolveBlob({
+        credentials: () => session.credentials(),
+        save: (c) => session.saveCredentials(c),
+        file: legacyFile(host, session.account),
+        warn: (m) => session.log('warn', m),
+      });
+      if (!blob) throw new SourceAuthError(NOT_PAIRED);
 
       const runtime = new TelegramPullRuntime({
         client: makeClient(blob),
@@ -344,10 +359,12 @@ export function createTelegramSource(
         }
         return null;
       }
-      const authFile = (session.account.config as { authFile?: unknown })
-        ?.authFile;
-      if (typeof authFile !== 'string' || authFile.length === 0) return null;
-      const blob = loadAuthBlob(path.join(host.self.dataDir, authFile));
+      // No migration here (a byte fetch can't save a login): the vault, or a
+      // not-yet-migrated file.
+      const file = legacyFile(host, session.account);
+      const blob =
+        blobFromCredentials(await session.credentials()) ??
+        (file ? loadAuthBlob(file) : null);
       if (!blob) return null;
       const client = makeClient(blob);
       try {

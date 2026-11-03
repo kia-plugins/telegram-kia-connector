@@ -89,7 +89,7 @@ describe('inputPeerFor', () => {
 });
 
 describe('telegram sender', () => {
-  const BLOB: AuthBlob = { apiId: 1, apiHash: 'h', session: 'S' };
+  const BLOB: AuthBlob = { apiId: 1, apiHash: 'HASH-IN-VAULT', session: 'SESSION-IN-VAULT' };
   const INTENT: SendIntent = {
     accountId: 'acc-1' as never,
     kind: 'reply',
@@ -98,15 +98,18 @@ describe('telegram sender', () => {
   };
 
   function setup(behave: Partial<Record<'connect' | 'sendMessage', () => Promise<unknown>>> = {}) {
+    // The session file would be on disk in a pre-1.2.0 profile; the sender
+    // must never look at it.
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-send-'));
-    saveAuthBlob(path.join(dataDir, 'auth/42.json'), BLOB);
+    saveAuthBlob(path.join(dataDir, 'auth/42.json'), { ...BLOB, session: 'FILE-SESSION' });
+    const reads = jest.spyOn(fs, 'readFileSync');
     const host = {
       self: { id: 'kia.telegram', dataDir },
       log: () => {},
       query: {
-        accounts: async () => [
-          { id: 'acc-1', source: 'telegram', identifier: '42', config: { authFile: 'auth/42.json' } },
-        ],
+        accounts: async () => {
+          throw new Error('the sender must not look the account up');
+        },
       },
     } as unknown as HostFor<'query'>;
     const calls: { made: Array<{ auth: AuthBlob; opts: unknown }>; sent: unknown[][]; disconnects: number } = {
@@ -128,13 +131,15 @@ describe('telegram sender', () => {
       calls.made.push({ auth, opts });
       return client;
     };
-    return { host, calls, makeClient };
+    return { host, calls, makeClient, reads, dataDir };
   }
+  const CTX = { credentials: { secret: JSON.stringify(BLOB) } };
+  afterEach(() => jest.restoreAllMocks());
 
   it('sends through a fresh flood-threshold-0 client built from the account’s session, quoting the target, then disconnects', async () => {
     const { host, calls, makeClient } = setup();
     const s = createTelegramSender(host, { makeClient });
-    await expect(s.send(INTENT)).resolves.toEqual({ externalMessageId: '77' });
+    await expect(s.send(INTENT, CTX)).resolves.toEqual({ externalMessageId: '77' });
     expect(calls.made).toEqual([{ auth: BLOB, opts: { forSend: true } }]);
     const [peer, params] = calls.sent[0] as [Api.InputPeerChannel, unknown];
     expect(peer).toBeInstanceOf(Api.InputPeerChannel);
@@ -147,7 +152,7 @@ describe('telegram sender', () => {
   it('a chat-level target sends without replyTo', async () => {
     const { host, calls, makeClient } = setup();
     const { replyTo: _r, ...chatLevel } = INTENT.outboundRef as Record<string, unknown>;
-    await createTelegramSender(host, { makeClient }).send({ ...INTENT, outboundRef: chatLevel });
+    await createTelegramSender(host, { makeClient }).send({ ...INTENT, outboundRef: chatLevel }, CTX);
     expect(calls.sent[0][1]).toEqual({ message: 'On it' });
   });
 
@@ -157,7 +162,7 @@ describe('telegram sender', () => {
         throw Object.assign(new Error('Please wait 120 seconds'), { code: 420, seconds: 120 });
       },
     });
-    await expect(createTelegramSender(host, { makeClient }).send(INTENT)).rejects.toThrow(
+    await expect(createTelegramSender(host, { makeClient }).send(INTENT, CTX)).rejects.toThrow(
       /^rate-limited: Telegram asked to wait 120 s/,
     );
   });
@@ -169,14 +174,14 @@ describe('telegram sender', () => {
       },
     });
     await expect(
-      createTelegramSender(refused.host, { makeClient: refused.makeClient }).send(INTENT),
+      createTelegramSender(refused.host, { makeClient: refused.makeClient }).send(INTENT, CTX),
     ).rejects.toThrow(/^not sent: Telegram refused the message/);
     const lost = setup({
       sendMessage: async () => {
         throw Object.assign(new Error('401: AUTH_KEY_UNREGISTERED'), { errorMessage: 'AUTH_KEY_UNREGISTERED' });
       },
     });
-    await expect(createTelegramSender(lost.host, { makeClient: lost.makeClient }).send(INTENT)).rejects.toThrow(
+    await expect(createTelegramSender(lost.host, { makeClient: lost.makeClient }).send(INTENT, CTX)).rejects.toThrow(
       /reconnect the account in Settings$/,
     );
   });
@@ -187,7 +192,7 @@ describe('telegram sender', () => {
         throw new Error('Connection closed');
       },
     });
-    await expect(createTelegramSender(host, { makeClient }).send(INTENT)).rejects.toThrow(/^Connection closed$/);
+    await expect(createTelegramSender(host, { makeClient }).send(INTENT, CTX)).rejects.toThrow(/^Connection closed$/);
   });
 
   it('a connect failure is "not sent" — the request never started', async () => {
@@ -196,7 +201,7 @@ describe('telegram sender', () => {
         throw new Error('ECONNREFUSED');
       },
     });
-    await expect(createTelegramSender(host, { makeClient }).send(INTENT)).rejects.toThrow(
+    await expect(createTelegramSender(host, { makeClient }).send(INTENT, CTX)).rejects.toThrow(
       /^not sent: couldn't connect to Telegram/,
     );
     expect(calls.sent).toHaveLength(0);
@@ -208,43 +213,55 @@ describe('telegram sender', () => {
       connect: () => new Promise<void>((r) => (finishConnect = r)),
     });
     const s = createTelegramSender(host, { makeClient, deadlineMs: 10 });
-    await expect(s.send(INTENT)).rejects.toThrow(/^not sent: couldn't reach Telegram in time/);
+    await expect(s.send(INTENT, CTX)).rejects.toThrow(/^not sent: couldn't reach Telegram in time/);
     expect(calls.disconnects).toBe(1);
     finishConnect();
     await new Promise((r) => setImmediate(r));
     expect(calls.sent).toHaveLength(0);
   });
 
-  it('the deadline also covers the account lookup: a lookup that returns late never connects or sends', async () => {
-    let finishLookup!: (v: unknown) => void;
-    const { host, calls, makeClient } = setup();
-    const accounts = host.query.accounts;
-    (host.query as { accounts: unknown }).accounts = () =>
-      new Promise((r) => (finishLookup = r)).then(() => accounts());
-    await expect(createTelegramSender(host, { makeClient, deadlineMs: 10 }).send(INTENT)).rejects.toThrow(
-      /^not sent: couldn't reach Telegram in time/,
-    );
-    finishLookup(undefined);
-    await new Promise((r) => setTimeout(r, 5));
-    expect(calls.made).toHaveLength(0);
-    expect(calls.sent).toHaveLength(0);
-  });
-
   it('a send still unanswered at the deadline is reported as unconfirmed (may have been sent)', async () => {
     const { host, calls, makeClient } = setup({ sendMessage: () => new Promise(() => {}) });
-    await expect(createTelegramSender(host, { makeClient, deadlineMs: 10 }).send(INTENT)).rejects.toThrow(
+    await expect(createTelegramSender(host, { makeClient, deadlineMs: 10 }).send(INTENT, CTX)).rejects.toThrow(
       /^Telegram did not confirm the message/,
     );
     expect(calls.disconnects).toBe(1);
   });
 
-  it('refuses before connecting when the ref or the session is missing', async () => {
+  it('sender uses ctx.credentials and never reads a file', async () => {
+    const { host, calls, makeClient, reads, dataDir } = setup();
+    await createTelegramSender(host, { makeClient }).send(INTENT, CTX);
+    expect(calls.made[0].auth).toEqual(BLOB); // the vault's, not FILE-SESSION
+    const file = path.join(dataDir, 'auth/42.json');
+    expect(reads.mock.calls.some((c) => String(c[0]) === file)).toBe(false);
+  });
+
+  it('sender with no credentials asks for a reconnect, before connecting', async () => {
     const { host, calls, makeClient } = setup();
     const s = createTelegramSender(host, { makeClient });
-    await expect(s.send({ ...INTENT, outboundRef: undefined })).rejects.toThrow(/^not sent: /);
-    await expect(s.send({ ...INTENT, accountId: 'other' as never })).rejects.toThrow(
+    await expect(s.send(INTENT)).rejects.toThrow(/reconnect the account in Settings$/);
+    await expect(s.send(INTENT, { credentials: null })).rejects.toThrow(/reconnect the account in Settings$/);
+    await expect(s.send(INTENT, { credentials: { password: 'twofa' } })).rejects.toThrow(
+      /reconnect the account in Settings$/,
+    );
+    await expect(s.send(INTENT, { credentials: { secret: 'not json' } })).rejects.toThrow(
       /reconnect the account in Settings$/,
     );
     expect(calls.made).toHaveLength(0);
+  });
+
+  it('refuses before connecting when the ref is missing', async () => {
+    const { host, calls, makeClient } = setup();
+    const s = createTelegramSender(host, { makeClient });
+    await expect(s.send({ ...INTENT, outboundRef: undefined }, CTX)).rejects.toThrow(/^not sent: /);
+    expect(calls.made).toHaveLength(0);
+  });
+
+  it('no secret in a refusal', async () => {
+    const { host, makeClient } = setup();
+    const bad = { credentials: { secret: JSON.stringify({ ...BLOB, apiId: 'x' }) } };
+    const err = (await createTelegramSender(host, { makeClient }).send(INTENT, bad).catch((e: Error) => e)) as Error;
+    expect(String(err.message)).not.toContain(BLOB.session);
+    expect(String(err.message)).not.toContain(BLOB.apiHash);
   });
 });

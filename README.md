@@ -20,10 +20,13 @@ device you can see and revoke at any time (Settings → Devices).
   one media download at a time), which reduces but does not eliminate this.
 - **Secret chats never appear.** They are end-to-end encrypted to specific
   devices and are invisible to any new client by design.
-- **Session storage is plaintext.** Your `api_hash` and login session are
-  stored unencrypted in the extension's private data directory. Anyone with
-  that file can read your account until you revoke the session from
-  Telegram → Settings → Devices → terminate.
+- **Session storage.** From 1.2.0 your `api_hash` and login session live in
+  KIAgent's encrypted credential vault, not in a file, so they move with the
+  account when another of your devices takes over. A session paired on an
+  older version sits in a plaintext file in the extension's data directory
+  until the first sync after the update moves it into the vault and deletes
+  the file. Revoke a session any time from Telegram → Settings → Devices →
+  terminate.
 
 ## Install
 
