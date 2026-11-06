@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@kiagent/connector-sdk": "https://github.com/edjafarov/kiagent-core/releases/download/sdk-v1.3.0/kiagent-connector-sdk-1.3.0.tgz",
+    "@kiagent/connector-sdk": "https://github.com/edjafarov/kiagent-core/releases/download/sdk-v1.13.0/kiagent-connector-sdk-1.13.0.tgz",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.0",
     "esbuild": "^0.24.2",
